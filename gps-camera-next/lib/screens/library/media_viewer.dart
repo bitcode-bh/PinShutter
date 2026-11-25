@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/date_format.dart';
+import '../../core/design/palette.dart';
+import '../../core/design/text_styles.dart';
+import '../../core/design/tokens.dart';
 
 import '../../models/media_item.dart';
 import '../../services/media_image.dart';
@@ -15,8 +18,12 @@ Future<String?> openMediaViewer(
   MediaItem item,
 ) => Navigator.of(context).push<String>(
   PageRouteBuilder(
-    transitionDuration: const Duration(milliseconds: 240),
-    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : Motion.normal,
+    reverseTransitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : Motion.fast,
     pageBuilder: (_, _, _) => MediaViewer(library: library, initial: item),
     transitionsBuilder: (_, animation, _, child) =>
         FadeTransition(opacity: animation, child: child),
@@ -110,7 +117,7 @@ class _MediaViewerState extends State<MediaViewer> {
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
               'Delete',
-              style: TextStyle(color: Color(0xFFFF6B6B)),
+              style: TextStyle(color: Palette.danger),
             ),
           ),
         ],
@@ -155,10 +162,11 @@ class _MediaViewerState extends State<MediaViewer> {
     final settings = SettingsController.instance;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -166,10 +174,7 @@ class _MediaViewerState extends State<MediaViewer> {
             children: [
               Text(
                 '${_dateFormat.format(item.taken)} at ${_timeFormat.format(item.taken)}',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: AppText.title,
               ),
               const SizedBox(height: 4),
               Text(item.name, style: const TextStyle(color: Colors.white70)),
@@ -301,10 +306,7 @@ class _MediaViewerState extends State<MediaViewer> {
                                 showingOriginal
                                     ? 'Original'
                                     : _dateFormat.format(item.taken),
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: AppText.bodyHi,
                               ),
                               Text(
                                 [
@@ -393,7 +395,9 @@ class _Chrome extends StatelessWidget {
       ignoring: !visible,
       child: AnimatedOpacity(
         opacity: visible ? 1 : 0,
-        duration: const Duration(milliseconds: 160),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : Motion.fast,
         child: DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -480,6 +484,11 @@ class _PhotoPageState extends State<PhotoPage>
   }
 
   void _animateTo(Matrix4 target) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _animation.stop();
+      _transform.value = target;
+      return;
+    }
     _tween = Matrix4Tween(begin: _transform.value, end: target);
     _animation.forward(from: 0);
   }

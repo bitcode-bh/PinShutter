@@ -77,111 +77,129 @@ class _GlassSegmentedState<T> extends State<GlassSegmented<T>> {
       (o) => o.value == widget.selected,
     );
     final count = widget.options.length;
-    final height = math.max(
-      56.0,
-      math.max(
-        widget.height,
-        MediaQuery.textScalerOf(context).scale(12) * 1.2 + 16,
-      ),
-    );
-    return Container(
-      height: height,
-      padding: const EdgeInsets.all(3),
-      decoration: ShapeDecoration(
-        color: Palette.glassFillStrong,
-        shape: Corners.shape(
-          Corners.md,
-          side: const BorderSide(color: Palette.glassStrokeSoft),
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final slot = constraints.maxWidth / count;
-          final rtl = Directionality.of(context) == TextDirection.rtl;
-          void follow(double x) {
-            final position = rtl ? constraints.maxWidth - x : x;
-            setState(
-              () => _drag = (position / slot - .5).clamp(0.0, count - 1.0),
-            );
-          }
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final labelWidth = math.max(1.0, (bounds.maxWidth - 8) / count - 8);
+        var labelHeight = 0.0;
+        for (final option in widget.options) {
+          final painter = TextPainter(
+            text: TextSpan(text: option.label, style: AppText.label),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: labelWidth);
+          labelHeight = math.max(labelHeight, painter.height);
+          painter.dispose();
+        }
+        final height = math.max(
+          56.0,
+          math.max(widget.height, labelHeight + 24),
+        );
+        return Container(
+          height: height,
+          padding: const EdgeInsets.all(3),
+          decoration: ShapeDecoration(
+            color: Palette.glassFillStrong,
+            shape: Corners.shape(
+              Corners.md,
+              side: const BorderSide(color: Palette.glassStrokeSoft),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final slot = constraints.maxWidth / count;
+              final rtl = Directionality.of(context) == TextDirection.rtl;
+              void follow(double x) {
+                final position = rtl ? constraints.maxWidth - x : x;
+                setState(
+                  () => _drag = (position / slot - .5).clamp(0.0, count - 1.0),
+                );
+              }
 
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: widget.enabled
-                ? (d) => follow(d.localPosition.dx)
-                : null,
-            onHorizontalDragUpdate: widget.enabled
-                ? (d) => follow(d.localPosition.dx)
-                : null,
-            onHorizontalDragEnd: widget.enabled
-                ? (_) => _select((_drag ?? selected.toDouble()).round())
-                : null,
-            onHorizontalDragCancel: () => setState(() => _drag = null),
-            child: Stack(
-              children: [
-                AnimatedAlign(
-                  duration:
-                      _drag != null || MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : Motion.normal,
-                  curve: Curves.easeOutCubic,
-                  alignment: AlignmentDirectional(
-                    count == 1
-                        ? 0
-                        : 2 * (_drag ?? selected.toDouble()) / (count - 1) - 1,
-                    0,
-                  ),
-                  child: IgnorePointer(
-                    child: Container(
-                      key: const ValueKey('segment-indicator'),
-                      width: slot,
-                      height: height - 8,
-                      decoration: ShapeDecoration(
-                        color: const Color(0xFF3A3A3C),
-                        shape: Corners.shape(
-                          Corners.sm,
-                          side: const BorderSide(
-                            color: Palette.glassStrokeSoft,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Row(
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: widget.enabled
+                    ? (d) => follow(d.localPosition.dx)
+                    : null,
+                onHorizontalDragUpdate: widget.enabled
+                    ? (d) => follow(d.localPosition.dx)
+                    : null,
+                onHorizontalDragEnd: widget.enabled
+                    ? (_) => _select((_drag ?? selected.toDouble()).round())
+                    : null,
+                onHorizontalDragCancel: () => setState(() => _drag = null),
+                child: Stack(
                   children: [
-                    for (var i = 0; i < count; i++)
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected: i == selected,
-                          enabled: widget.enabled || i == selected,
-                          child: SettingsTap(
-                            onTap: widget.enabled || i == selected
-                                ? () => _select(i)
-                                : null,
-                            child: Center(
-                              child: Text(
-                                widget.options[i].label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.label.copyWith(
-                                  color: i == selected
-                                      ? Palette.accentYellow
-                                      : Palette.textMid,
-                                ),
+                    AnimatedAlign(
+                      duration:
+                          _drag != null ||
+                              MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : Motion.normal,
+                      curve: Curves.easeOutCubic,
+                      alignment: AlignmentDirectional(
+                        count == 1
+                            ? 0
+                            : 2 * (_drag ?? selected.toDouble()) / (count - 1) -
+                                  1,
+                        0,
+                      ),
+                      child: IgnorePointer(
+                        child: Container(
+                          key: const ValueKey('segment-indicator'),
+                          width: slot,
+                          height: height - 8,
+                          decoration: ShapeDecoration(
+                            color: const Color(0xFF3A3A3C),
+                            shape: Corners.shape(
+                              Corners.sm,
+                              side: const BorderSide(
+                                color: Palette.glassStrokeSoft,
                               ),
                             ),
                           ),
                         ),
                       ),
+                    ),
+                    Row(
+                      children: [
+                        for (var i = 0; i < count; i++)
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: i == selected,
+                              enabled: widget.enabled || i == selected,
+                              child: SettingsTap(
+                                onTap: widget.enabled || i == selected
+                                    ? () => _select(i)
+                                    : null,
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: Text(
+                                      widget.options[i].label,
+                                      textAlign: TextAlign.center,
+                                      style: AppText.label.copyWith(
+                                        color: i == selected
+                                            ? Palette.accentYellow
+                                            : Palette.textMid,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -305,8 +323,8 @@ class PanelHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: Palette.textHi),
-        const SizedBox(width: 10),
+        ExcludeSemantics(child: Icon(icon, size: 20, color: Palette.textHi)),
+        const SizedBox(width: Insets.sm),
         Expanded(child: Text(title, style: AppText.title)),
         GlassIconButton(
           icon: Icons.close,
@@ -328,12 +346,24 @@ class SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+      padding: const EdgeInsets.only(bottom: Insets.xs),
       child: Row(
         children: [
-          Text(text, style: AppText.caption.copyWith(color: Palette.textMid)),
-          const Spacer(),
-          ?trailing,
+          Expanded(
+            child: Text(
+              text,
+              style: AppText.caption.copyWith(color: Palette.textMid),
+            ),
+          ),
+          if (trailing != null)
+            Flexible(
+              flex: 2,
+              fit: FlexFit.tight,
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: trailing!,
+              ),
+            ),
         ],
       ),
     );

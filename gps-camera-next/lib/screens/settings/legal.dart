@@ -127,63 +127,66 @@ class PrivacyScreen extends StatelessWidget {
       foregroundColor: Colors.white,
       title: const Text('Privacy'),
     ),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-      children: [
-        Text('Developer: $developerDisplayName', style: AppText.bodyHi),
-        const SizedBox(height: 20),
-        for (final (title, body) in _sections) ...[
-          Text(title, style: AppText.bodyHi.copyWith(color: Colors.white)),
-          const SizedBox(height: 6),
-          Text(body, style: AppText.body.copyWith(height: 1.4)),
-          const SizedBox(height: 20),
-        ],
-        Text(
-          'Map accuracy',
-          style: AppText.bodyHi.copyWith(color: Colors.white),
-        ),
-        const SizedBox(height: 6),
-        Text(mapAccuracyNotice, style: AppText.body.copyWith(height: 1.4)),
-        if (privacyPolicyUrl.isNotEmpty) ...[
-          const SizedBox(height: 20),
+    body: SafeArea(
+      top: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        children: [
+          Text('Developer: $developerDisplayName', style: AppText.bodyHi),
+          const SizedBox(height: 16),
+          for (final (title, body) in _sections) ...[
+            Text(title, style: AppText.bodyHi.copyWith(color: Colors.white)),
+            const SizedBox(height: 8),
+            Text(body, style: AppText.body.copyWith(height: 1.4)),
+            const SizedBox(height: 16),
+          ],
           Text(
-            'Full privacy policy',
+            'Map accuracy',
             style: AppText.bodyHi.copyWith(color: Colors.white),
           ),
-          const SizedBox(height: 6),
-          TextButton.icon(
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('Read the full privacy policy'),
-            onPressed: () async {
-              var opened = false;
-              try {
-                opened = await Native.openWebPage(privacyPolicyUrl);
-              } catch (_) {
-                // Keep the address available if no browser can handle it.
-              }
-              if (!opened && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Could not open the browser. Copy the policy address below.',
+          const SizedBox(height: 8),
+          Text(mapAccuracyNotice, style: AppText.body.copyWith(height: 1.4)),
+          if (privacyPolicyUrl.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Full privacy policy',
+              style: AppText.bodyHi.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Read the full privacy policy'),
+              onPressed: () async {
+                var opened = false;
+                try {
+                  opened = await Native.openWebPage(privacyPolicyUrl);
+                } catch (_) {
+                  // Keep the address available if no browser can handle it.
+                }
+                if (!opened && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Could not open the browser. Copy the policy address below.',
+                      ),
                     ),
-                  ),
-                );
-              }
-            },
-          ),
-          SelectableText(
-            privacyPolicyUrl,
-            style: AppText.body.copyWith(color: Palette.teal),
-          ),
+                  );
+                }
+              },
+            ),
+            SelectableText(
+              privacyPolicyUrl,
+              style: AppText.body.copyWith(color: Palette.teal),
+            ),
+          ],
+          if (privacyContactEmail.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Privacy contact', style: AppText.bodyHi),
+            const SizedBox(height: 8),
+            SelectableText(privacyContactEmail, style: AppText.body),
+          ],
         ],
-        if (privacyContactEmail.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          Text('Privacy contact', style: AppText.bodyHi),
-          const SizedBox(height: 6),
-          SelectableText(privacyContactEmail, style: AppText.body),
-        ],
-      ],
+      ),
     ),
   );
 }

@@ -29,68 +29,42 @@ class TemplatesScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         title: const Text('Stamp designs'),
         actions: [
-          Pressable(
-            onTap: () => Navigator.of(
+          TextButton.icon(
+            onPressed: () => Navigator.of(
               context,
             ).push(SheetRoute(page: const CustomTemplateEditor())),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              decoration: ShapeDecoration(
-                gradient: Palette.selectionGradient,
-                shadows: const [
-                  BoxShadow(
-                    color: Palette.selectionGlow,
-                    blurRadius: 14,
-                    spreadRadius: -3,
-                  ),
-                ],
-                shape: Corners.shape(
-                  Corners.sm,
-                  side: const BorderSide(color: Palette.selectionStroke),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.tune, size: 15, color: Palette.textHi),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Customize',
-                    style: AppText.label.copyWith(
-                      color: Palette.textHi,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            icon: const Icon(Icons.tune, size: 20),
+            label: const Text('Customize'),
           ),
         ],
       ),
-      body: ListenableBuilder(
-        listenable: templates,
-        builder: (context, _) {
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(Insets.md, 6, Insets.md, 32),
-            itemCount: offeredTemplates.length,
-            separatorBuilder: (_, _) => const SizedBox(height: Insets.md),
-            itemBuilder: (context, i) {
-              final t = offeredTemplates[i];
-              return _TemplateCard(
-                template: t,
-                selected: templates.config.template == t,
-                geo: geo,
-                settings: settings,
-                onTap: () {
-                  if (templates.config.template != t) {
-                    templates.selectTemplate(t);
-                  }
-                  Navigator.of(context).maybePop();
-                },
-              );
-            },
-          );
-        },
+      body: SafeArea(
+        top: false,
+        child: ListenableBuilder(
+          listenable: templates,
+          builder: (context, _) {
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(Insets.md, 6, Insets.md, 32),
+              itemCount: offeredTemplates.length,
+              separatorBuilder: (_, _) => const SizedBox(height: Insets.md),
+              itemBuilder: (context, i) {
+                final t = offeredTemplates[i];
+                return _TemplateCard(
+                  template: t,
+                  selected: templates.config.template == t,
+                  geo: geo,
+                  settings: settings,
+                  onTap: () {
+                    if (templates.config.template != t) {
+                      templates.selectTemplate(t);
+                    }
+                    Navigator.of(context).maybePop();
+                  },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -130,20 +104,17 @@ class _TemplateCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(template.title, style: AppText.h2),
+                  Expanded(child: Text(template.title, style: AppText.title)),
                   const SizedBox(width: 8),
                   if (template.isNew) const _NewBadge(),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   _SelectMark(selected: selected),
                 ],
               ),
               const SizedBox(height: 2),
               Text(template.blurb, style: AppText.label),
               const SizedBox(height: 4),
-              const Text(
-                'Sample location',
-                style: TextStyle(fontSize: 11, color: Colors.white54),
-              ),
+              const Text('Sample location', style: AppText.label),
               const SizedBox(height: Insets.sm),
               // Preview over a faux-photo backdrop.
               ClipRSuperellipse(
@@ -199,7 +170,7 @@ class _NewBadge extends StatelessWidget {
         'NEW',
         style: AppText.caption.copyWith(
           color: cameraYellow,
-          fontSize: 8.5,
+          fontSize: 12,
           letterSpacing: 0.8,
         ),
       ),
@@ -214,7 +185,9 @@ class _SelectMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: Motion.normal,
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : Motion.normal,
       curve: Motion.emphasized,
       width: 26,
       height: 26,

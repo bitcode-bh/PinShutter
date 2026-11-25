@@ -44,8 +44,12 @@ class _PressableState extends State<Pressable> {
       onTapUp: (_) => _set(false),
       onTapCancel: () => _set(false),
       child: AnimatedScale(
-        scale: enabled && _down ? widget.scale : 1.0,
-        duration: Motion.fast,
+        scale: enabled && _down && !MediaQuery.disableAnimationsOf(context)
+            ? widget.scale
+            : 1.0,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : Motion.fast,
         curve: Motion.spring,
         child: widget.child,
       ),

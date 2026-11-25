@@ -14,6 +14,7 @@ class FadeThroughRoute<T> extends PageRouteBuilder<T> {
         barrierColor: Colors.black54,
         pageBuilder: (_, _, _) => page,
         transitionsBuilder: (context, animation, secondary, child) {
+          if (MediaQuery.disableAnimationsOf(context)) return child;
           final curved = CurvedAnimation(
             parent: animation,
             curve: Motion.emphasized,
@@ -43,6 +44,7 @@ class SheetRoute<T> extends PageRouteBuilder<T> {
         barrierColor: Colors.black54,
         pageBuilder: (_, _, _) => page,
         transitionsBuilder: (context, animation, secondary, child) {
+          if (MediaQuery.disableAnimationsOf(context)) return child;
           final curved = CurvedAnimation(
             parent: animation,
             curve: Motion.emphasized,

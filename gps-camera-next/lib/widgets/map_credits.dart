@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/native.dart';
 import '../core/design/tokens.dart';
+import '../core/design/text_styles.dart';
 import '../models/map_kind.dart';
 import '../services/map_attribution.dart';
 
@@ -75,11 +76,13 @@ class MapCreditsButton extends StatelessWidget {
           ],
         ),
       ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Text(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: const Text(
           'Powered by Esri · Map credits',
-          style: TextStyle(fontSize: 11, color: Colors.white),
+          style: AppText.label,
         ),
       ),
     ),

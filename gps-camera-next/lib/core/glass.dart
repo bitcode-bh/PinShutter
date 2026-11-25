@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'design/palette.dart';
@@ -152,10 +154,9 @@ class GlassIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final br = BorderRadius.circular(Corners.md);
     final inner = SizedBox(
-      width: size,
-      height: size,
+      width: math.max(48, size),
+      height: math.max(48, size),
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -181,20 +182,6 @@ class GlassIconButton extends StatelessWidget {
       ),
     );
 
-    // Solid squircle; the active state uses a lighter fill.
-    final body = DecoratedBox(
-      decoration: ShapeDecoration(
-        color: active ? const Color(0xFF3A3A3C) : Palette.surfaceSolid,
-        shape: Corners.shape(
-          Corners.md,
-          side: hasBorder
-              ? const BorderSide(color: Palette.strokeSolid)
-              : BorderSide.none,
-        ),
-      ),
-      child: inner,
-    );
-
     return Tooltip(
       message: label,
       excludeFromSemantics: true,
@@ -202,9 +189,21 @@ class GlassIconButton extends StatelessWidget {
         label: label,
         button: true,
         enabled: onTap != null,
-        child: Pressable(
-          onTap: onTap,
-          child: ClipRSuperellipse(borderRadius: br, child: body),
+        selected: active,
+        child: Material(
+          color: active ? const Color(0xFF3A3A3C) : Palette.surfaceSolid,
+          shape: Corners.shape(
+            Corners.md,
+            side: hasBorder
+                ? const BorderSide(color: Palette.strokeSolid)
+                : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: Corners.shape(Corners.md),
+            child: ExcludeSemantics(child: inner),
+          ),
         ),
       ),
     );

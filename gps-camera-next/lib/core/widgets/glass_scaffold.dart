@@ -23,40 +23,56 @@ class GlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(Insets.md, topPad + 10, Insets.md, 6),
-            child: Row(
-              children: [
-                GlassIconButton(
-                  icon: Icons.arrow_back,
-                  label: 'Back',
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: Insets.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: AppText.h1),
-                      if (subtitle != null) ...[
-                        const SizedBox(height: 2),
-                        Text(subtitle!, style: AppText.label),
-                      ],
-                    ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Insets.md,
+                Insets.xs,
+                Insets.md,
+                Insets.xs,
+              ),
+              child: Row(
+                children: [
+                  GlassIconButton(
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    onTap: () => Navigator.of(context).maybePop(),
                   ),
-                ),
-                ...actions,
-              ],
+                  const SizedBox(width: Insets.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: AppText.h1,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle!,
+                            style: AppText.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  ...actions,
+                ],
+              ),
             ),
-          ),
-          Expanded(child: body),
-          ?bottom,
-        ],
+            Expanded(child: body),
+            ?bottom,
+          ],
+        ),
       ),
     );
   }

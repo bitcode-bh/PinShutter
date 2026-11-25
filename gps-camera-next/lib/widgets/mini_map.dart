@@ -575,9 +575,7 @@ class _MapZoomPopupState extends State<_MapZoomPopup> {
                             ),
                             child: Text(
                               '${_currentZoom.toStringAsFixed(1)}x',
-                              style: AppText.mono.copyWith(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                              style: AppText.metric.copyWith(
                                 color: Palette.teal,
                               ),
                             ),
@@ -617,8 +615,7 @@ class _MapZoomPopupState extends State<_MapZoomPopup> {
                             ),
                             child: Text(
                               'Double-tap to reset',
-                              style: AppText.caption.copyWith(
-                                fontSize: 8.5,
+                              style: AppText.label.copyWith(
                                 color: Palette.textHi,
                                 fontWeight: FontWeight.w500,
                               ),

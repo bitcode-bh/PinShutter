@@ -103,6 +103,8 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
     final fields = _t.config.orderedDetails;
     final updated = await showModalBottomSheet<List<StampField>>(
       context: context,
+      useSafeArea: true,
+      showDragHandle: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
           child: Column(
@@ -174,7 +176,12 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
         builder: (context, _) {
           final c = _t.config;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(Insets.md, 6, Insets.md, 36),
+            padding: const EdgeInsets.fromLTRB(
+              Insets.md,
+              Insets.xs,
+              Insets.md,
+              Insets.md,
+            ),
             children: [
               _previewCard(c),
               Wrap(
@@ -197,7 +204,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                   ),
                 ],
               ),
-              const SizedBox(height: Insets.lg),
+              const SizedBox(height: Insets.md),
 
               const SectionLabel('STYLE'),
               // Compact camera-style tiles: tap a tile to cycle its value.
@@ -242,13 +249,17 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                   ],
                 ),
               ),
-              const SizedBox(height: Insets.lg),
+              const SizedBox(height: Insets.md),
 
-              TextButton(
-                onPressed: c.orderedDetails.length < 2 ? null : _reorderFields,
-                child: const Text('Reorder fields'),
+              SectionLabel(
+                'LAYOUT',
+                trailing: TextButton(
+                  onPressed: c.orderedDetails.length < 2
+                      ? null
+                      : _reorderFields,
+                  child: const Text('Reorder fields'),
+                ),
               ),
-              const SectionLabel('LAYOUT'),
               Wrap(
                 spacing: Insets.xs,
                 children: [
@@ -301,7 +312,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                   ],
                 ),
               ),
-              const SizedBox(height: Insets.lg),
+              const SizedBox(height: Insets.md),
 
               _glassCard(
                 ExpansionTile(
@@ -310,8 +321,15 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                     'CUSTOM TEXT',
                     style: AppText.caption.copyWith(color: Palette.textMid),
                   ),
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(top: Insets.xs),
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: Insets.xs,
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(
+                    Insets.xs,
+                    Insets.xs,
+                    Insets.xs,
+                    Insets.xs,
+                  ),
                   shape: const Border(),
                   collapsedShape: const Border(),
                   iconColor: Palette.textMid,
@@ -333,7 +351,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                       Icons.title,
                       (v) => _t.update((c) => c.projectTitle = v),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Insets.xs),
                     _field(
                       'Site ID',
                       _site,
@@ -345,7 +363,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                         }
                       }),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Insets.xs),
                     _field(
                       'Remarks',
                       _remarks,
@@ -357,21 +375,21 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                         }
                       }),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Insets.xs),
                     _field(
                       'Note / Hashtag',
                       _note,
                       Icons.tag,
                       (v) => _t.update((c) => c.note = v),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Insets.xs),
                     _field(
                       'Person Name',
                       _person,
                       Icons.person_outline,
                       (v) => _t.update((c) => c.personName = v),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: Insets.xs),
                     _field(
                       'Contact Number',
                       _contact,
@@ -382,7 +400,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                   ],
                 ),
               ),
-              const SizedBox(height: Insets.lg),
+              const SizedBox(height: Insets.md),
 
               for (final entry in _groups.entries) ...[
                 SectionLabel(entry.key.toUpperCase()),
@@ -396,7 +414,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
                     ],
                   ),
                 ),
-                const SizedBox(height: Insets.lg),
+                const SizedBox(height: Insets.md),
               ],
             ],
           );
@@ -434,7 +452,10 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
 
   Widget _glassCard(Widget child) => CameraGlass(
     radius: Corners.lg,
-    padding: const EdgeInsets.all(Insets.md),
+    padding: const EdgeInsets.symmetric(
+      horizontal: Insets.xs,
+      vertical: Insets.xxs,
+    ),
     child: child,
   );
 

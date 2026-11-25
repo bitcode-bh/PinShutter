@@ -99,26 +99,46 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
     // When !alignLeft (default): strip expands leftward (strip on left, button on right).
     final expandRight = widget.alignLeft;
 
-    final strip = ClipRect(
-      child: AnimatedAlign(
-        alignment: expandRight ? Alignment.centerLeft : Alignment.centerRight,
-        duration: Motion.normal,
-        curve: Motion.emphasized,
-        widthFactor: _open ? 1.0 : 0.0,
-        child: AnimatedOpacity(
-          opacity: _open ? 1 : 0,
-          duration: Motion.normal,
-          curve: Motion.emphasized,
-          child: Padding(
-            padding: expandRight
-                ? const EdgeInsets.only(left: 8)
-                : const EdgeInsets.only(right: 8),
-            child: GlassSurface.menu(
-              radius: Corners.pill,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [for (final c in SettingsCat.values) _catTile(c)],
+    final strip = ExcludeFocus(
+      excluding: !_open,
+      child: ExcludeSemantics(
+        excluding: !_open,
+        child: IgnorePointer(
+          ignoring: !_open,
+          child: ClipRect(
+            child: AnimatedAlign(
+              alignment: expandRight
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : Motion.normal,
+              curve: Motion.emphasized,
+              widthFactor: _open ? 1.0 : 0.0,
+              child: AnimatedOpacity(
+                opacity: _open ? 1 : 0,
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : Motion.normal,
+                curve: Motion.emphasized,
+                child: Padding(
+                  padding: expandRight
+                      ? const EdgeInsets.only(left: 8)
+                      : const EdgeInsets.only(right: 8),
+                  child: GlassSurface.menu(
+                    radius: Corners.pill,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final c in SettingsCat.values) _catTile(c),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -140,8 +160,9 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
     final active = _active == c;
     return SettingsTap(
       onTap: () => _select(c),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -169,7 +190,7 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
     icon: _open ? Icons.close : Icons.settings_outlined,
     label: _open ? 'Close settings' : 'Open settings',
     active: _open,
-    size: 46,
+    size: 48,
     onTap: _toggle,
   );
 }
@@ -178,7 +199,7 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
 Future<void> showSettingsCategory(BuildContext context, SettingsCat cat) {
   return showDialog<void>(
     context: context,
-    barrierColor: Colors.black26,
+    barrierColor: Colors.black54,
     builder: (_) => _SettingsPopup(cat: cat),
   );
 }
@@ -193,18 +214,16 @@ class _SettingsPopup extends StatelessWidget {
     final t = TemplateController.instance;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(Insets.lg),
+        padding: const EdgeInsets.all(Insets.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
           child: Material(
             color: Colors.transparent,
             child: CameraGlass(
               radius: Corners.lg,
-              padding: const EdgeInsets.fromLTRB(
-                Insets.lg,
-                Insets.md,
-                Insets.lg,
-                Insets.lg,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Insets.md,
+                vertical: Insets.sm,
               ),
               child: ListenableBuilder(
                 listenable: Listenable.merge([s, t]),
@@ -218,7 +237,7 @@ class _SettingsPopup extends StatelessWidget {
                         title: cat.label,
                         onClose: () => Navigator.of(context).pop(),
                       ),
-                      const SizedBox(height: Insets.sm),
+                      const SizedBox(height: Insets.xs),
                       Flexible(
                         child: SingleChildScrollView(
                           child: Column(
@@ -248,6 +267,7 @@ class _SettingsPopup extends StatelessWidget {
         return [
           GlassSwitchTile(
             label: 'Show stamp',
+            icon: Icons.layers_outlined,
             value: s.stampEnabled,
             onChanged: (value) => s.update(() => s.stampEnabled = value),
           ),
@@ -316,12 +336,12 @@ class _SettingsPopup extends StatelessWidget {
             onChanged: (v) => s.update(() => s.coordFormat = v),
           ),
           Padding(
-            padding: const EdgeInsets.only(top: Insets.sm),
+            padding: EdgeInsets.zero,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 2, bottom: Insets.xs),
+                  padding: const EdgeInsets.only(bottom: Insets.xxs),
                   child: Text(
                     'FORMAT & UNITS',
                     style: AppText.caption.copyWith(color: Palette.textMid),
@@ -399,7 +419,7 @@ class _SettingsPopup extends StatelessWidget {
             onTap: () => showOpenSourceLicences(context),
           ),
           Padding(
-            padding: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.only(top: Insets.xs),
             child: Text(
               mapAccuracyNotice,
               style: AppText.body.copyWith(fontSize: 12, height: 1.35),
@@ -434,12 +454,12 @@ class _SettingRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Insets.sm),
+      padding: const EdgeInsets.only(bottom: Insets.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 2, bottom: Insets.xs),
+            padding: const EdgeInsets.only(bottom: Insets.xxs),
             child: Text(
               label.toUpperCase(),
               style: AppText.caption.copyWith(color: Palette.textMid),
@@ -473,10 +493,11 @@ class _NavTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return SettingsTap(
       onTap: onTap,
-      child: Padding(
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
         padding: const EdgeInsets.symmetric(
           horizontal: Insets.xs,
-          vertical: 18,
+          vertical: Insets.xs,
         ),
         child: Row(
           children: [
@@ -486,7 +507,13 @@ class _NavTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(child: Text(title, style: AppText.bodyHi)),
-            Text(value, style: AppText.label.copyWith(color: Palette.textMid)),
+            Flexible(
+              child: Text(
+                value,
+                style: AppText.label,
+                textAlign: TextAlign.end,
+              ),
+            ),
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right, size: 18, color: Palette.textMid),
           ],
@@ -506,12 +533,12 @@ class _AboutLink extends StatelessWidget {
     button: true,
     child: SettingsTap(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(vertical: Insets.xs),
         child: Row(
           children: [
-            Text(label, style: AppText.body),
-            const Spacer(),
+            Expanded(child: Text(label, style: AppText.bodyHi)),
             const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
           ],
         ),
@@ -527,23 +554,27 @@ class _AboutRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stacked = MediaQuery.textScalerOf(context).scale(14) > 20;
+    final labelText = Text(label, style: AppText.body);
+    final valueText = Text(value, style: AppText.bodyHi);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: [
-          Text(label, style: AppText.body),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              value,
-              style: AppText.bodyHi,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      padding: const EdgeInsets.symmetric(vertical: Insets.xs),
+      child: stacked
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                labelText,
+                const SizedBox(height: Insets.xxs),
+                valueText,
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: labelText),
+                const SizedBox(width: Insets.xs),
+                Flexible(child: valueText),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

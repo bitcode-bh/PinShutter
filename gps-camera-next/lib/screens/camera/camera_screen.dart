@@ -1942,7 +1942,7 @@ class _CameraScreenState extends State<CameraScreen>
         if ((details.primaryVelocity ?? 0) > 80) _dismissMenus();
       },
       child: SizedBox(
-        height: 40,
+        height: 48,
         width: double.infinity,
         child: Center(
           child: Container(
@@ -1961,7 +1961,12 @@ class _CameraScreenState extends State<CameraScreen>
   Widget _stampMenu() => ListenableBuilder(
     listenable: Listenable.merge([_settings, _templates]),
     builder: (context, _) => CameraGlass(
-      padding: const EdgeInsets.fromLTRB(22, 4, 22, 24),
+      padding: const EdgeInsets.fromLTRB(
+        Insets.md,
+        Insets.xxs,
+        Insets.md,
+        Insets.md,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

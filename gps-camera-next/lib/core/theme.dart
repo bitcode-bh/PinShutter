@@ -30,6 +30,10 @@ class AppTheme {
       colorScheme: scheme.copyWith(
         primary: accent,
         secondary: accent,
+        onPrimary: Palette.onBrand,
+        onSecondary: Palette.onBrand,
+        onSurface: Palette.textHi,
+        onSurfaceVariant: Palette.textMid,
         surface: Palette.ink,
       ),
       splashFactory: InkRipple.splashFactory,
@@ -57,11 +61,35 @@ class AppTheme {
         headlineSmall: AppText.h1,
         titleLarge: AppText.h2,
         titleMedium: AppText.title,
+        titleSmall: AppText.bodyHi,
+        bodyLarge: AppText.bodyHi,
         bodyMedium: AppText.body,
+        bodySmall: AppText.label,
         labelLarge: AppText.label,
+        labelMedium: AppText.label,
         labelSmall: AppText.caption,
       ),
-      appBarTheme: const AppBarTheme(titleTextStyle: AppText.h1),
+      appBarTheme: const AppBarTheme(
+        titleTextStyle: AppText.h1,
+        backgroundColor: Palette.ink,
+        foregroundColor: Palette.textHi,
+        surfaceTintColor: Colors.transparent,
+      ),
+      iconButtonTheme: const IconButtonThemeData(
+        style: ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+          shape: WidgetStatePropertyAll(chip),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Palette.surfaceSolid,
+        surfaceTintColor: Colors.transparent,
+        modalBarrierColor: Colors.black54,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Corners.lg)),
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
       listTileTheme: const ListTileThemeData(titleTextStyle: AppText.bodyHi),
       chipTheme: ChipThemeData(shape: chip, labelStyle: AppText.label),
       popupMenuTheme: const PopupMenuThemeData(
@@ -70,19 +98,31 @@ class AppTheme {
       ),
       filledButtonTheme: const FilledButtonThemeData(
         style: ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(48, 48)),
           shape: WidgetStatePropertyAll(chip),
           textStyle: WidgetStatePropertyAll(AppText.label),
         ),
       ),
       outlinedButtonTheme: const OutlinedButtonThemeData(
         style: ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(48, 48)),
           shape: WidgetStatePropertyAll(chip),
           textStyle: WidgetStatePropertyAll(AppText.label),
         ),
       ),
-      dialogTheme: const DialogThemeData(shape: panel),
+      dialogTheme: const DialogThemeData(
+        shape: panel,
+        backgroundColor: Palette.surfaceSolid,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: AppText.title,
+        contentTextStyle: AppText.body,
+      ),
       textButtonTheme: const TextButtonThemeData(
-        style: ButtonStyle(shape: WidgetStatePropertyAll(chip)),
+        style: ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+          shape: WidgetStatePropertyAll(chip),
+          textStyle: WidgetStatePropertyAll(AppText.label),
+        ),
       ),
       tooltipTheme: const TooltipThemeData(
         decoration: ShapeDecoration(color: Palette.ink2, shape: chip),

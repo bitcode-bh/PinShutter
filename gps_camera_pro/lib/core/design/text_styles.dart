@@ -23,44 +23,44 @@ class AppText {
   );
 
   static const TextStyle h1 = TextStyle(
-    fontSize: 23,
-    height: 1.1,
-    fontWeight: FontWeight.w700,
+    fontSize: 28,
+    height: 34 / 28,
+    fontWeight: FontWeight.w500,
     letterSpacing: -0.3,
     color: Palette.textHi,
   );
 
   static const TextStyle h2 = TextStyle(
-    fontSize: 18,
-    height: 1.15,
-    fontWeight: FontWeight.w600,
+    fontSize: 20,
+    height: 26 / 20,
+    fontWeight: FontWeight.w500,
     letterSpacing: -0.2,
     color: Palette.textHi,
   );
 
   static const TextStyle title = TextStyle(
-    fontSize: 15,
-    height: 1.2,
-    fontWeight: FontWeight.w600,
+    fontSize: 16,
+    height: 22 / 16,
+    fontWeight: FontWeight.w500,
     color: Palette.textHi,
   );
 
   static const TextStyle body = TextStyle(
     fontSize: 14,
-    height: 1.35,
+    height: 20 / 14,
     fontWeight: FontWeight.w400,
     color: Palette.textMid,
   );
 
   static const TextStyle bodyHi = TextStyle(
     fontSize: 14,
-    height: 1.35,
+    height: 20 / 14,
     fontWeight: FontWeight.w500,
     color: Palette.textHi,
   );
 
   static const TextStyle label = TextStyle(
-    fontSize: 12.5,
+    fontSize: 12,
     height: 1.2,
     fontWeight: FontWeight.w500,
     color: Palette.textMid,
@@ -68,9 +68,9 @@ class AppText {
 
   /// Uppercase micro caption used on chips and field labels.
   static const TextStyle caption = TextStyle(
-    fontSize: 10,
-    height: 1.1,
-    fontWeight: FontWeight.w600,
+    fontSize: 12,
+    height: 16 / 12,
+    fontWeight: FontWeight.w400,
     letterSpacing: 0.9,
     color: Palette.textLo,
   );
@@ -78,8 +78,8 @@ class AppText {
   /// Numeric readout — tabular figures, medium weight.
   static const TextStyle metric = TextStyle(
     fontSize: 13,
-    height: 1.2,
-    fontWeight: FontWeight.w600,
+    height: 22 / 16,
+    fontWeight: FontWeight.w500,
     color: Palette.textHi,
     fontFeatures: [FontFeature.tabularFigures()],
   );
@@ -87,8 +87,8 @@ class AppText {
   /// Larger numeric headline (clock, hero coordinate).
   static const TextStyle mono = TextStyle(
     fontSize: 16,
-    height: 1.1,
-    fontWeight: FontWeight.w600,
+    height: 16 / 12,
+    fontWeight: FontWeight.w400,
     letterSpacing: 0.2,
     color: Palette.textHi,
     fontFeatures: [FontFeature.tabularFigures()],

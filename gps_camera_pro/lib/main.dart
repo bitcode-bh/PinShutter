@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/theme.dart';
+import 'core/widgets/stash_glass.dart';
 import 'screens/camera/camera_screen.dart';
 import 'state/settings_controller.dart';
 import 'state/template_controller.dart';
@@ -21,6 +22,7 @@ Future<void> main() async {
     ),
   );
 
+  await StashGlass.prepare();
   final prefs = await SharedPreferences.getInstance();
   SettingsController.instance.attach(prefs);
   TemplateController.instance.attach(prefs);

@@ -8,11 +8,8 @@ import 'package:geolocator/geolocator.dart';
 
 import '../models/geo_data.dart';
 
-/// Wraps geolocator + geocoding and always yields *something* renderable: a live
-/// fix when permission + signal are available, otherwise a demo fix so the
-/// stamp and map are never empty (e.g. on a simulator).
+/// Provides live fixes and reports when location is unavailable.
 class LocationService {
-  GeoData _last = GeoData.demo();
   LatLngLite? _geocodedAt;
   String _place = '';
   String _full = '';
@@ -21,23 +18,22 @@ class LocationService {
   String _flag = '';
   String _iso = '';
 
-  GeoData get last => _last;
-
-  /// Continuous stream of fixes. Reverse-geocoding is throttled to only run when
-  /// the user has moved a meaningful distance, keeping it cheap and quota-safe.
-  Stream<GeoData> watch() async* {
+  /// Continuous stream of fixes, with a bounded wait for the initial fix.
+  Stream<GeoData?> watch() async* {
     if (!await _ensurePermission()) {
-      yield _last = GeoData.demo();
+      yield null;
       return;
     }
-    // Emit a fast first fix.
     try {
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
-      yield _last = await _toGeo(p);
+      yield await _toGeo(position);
     } catch (_) {
-      yield _last = GeoData.demo();
+      yield null;
     }
 
     try {
@@ -46,30 +42,9 @@ class LocationService {
           accuracy: LocationAccuracy.best,
           distanceFilter: 2,
         ),
-      ).handleError((_) {
-        // Gracefully ignore stream errors to prevent crashes
-      }).asyncMap((p) async {
-        try {
-          return _last = await _toGeo(p);
-        } catch (_) {
-          return _last;
-        }
-      });
+      ).asyncMap(_toGeo);
     } catch (_) {
-      yield _last;
-    }
-  }
-
-  /// One-shot fix (used where a stream isn't needed).
-  Future<GeoData> fetch() async {
-    if (!await _ensurePermission()) return _last = GeoData.demo();
-    try {
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
-      );
-      return _last = await _toGeo(p);
-    } catch (_) {
-      return _last = GeoData.demo();
+      yield null;
     }
   }
 

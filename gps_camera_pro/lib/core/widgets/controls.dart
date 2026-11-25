@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../design/palette.dart';
 import '../design/text_styles.dart';
 import '../design/tokens.dart';
+import '../glass.dart';
 import 'pressable.dart';
 
 /// A glass segmented control. It is **flat** — there is no per-option selection
@@ -95,10 +96,6 @@ class GlassSwitch extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: value ? Palette.selectionGradient : null,
           color: value ? null : Palette.glassFillStrong,
-          borderRadius: BorderRadius.circular(Corners.pill),
-          border: Border.all(
-            color: value ? Palette.selectionStroke : Palette.glassStrokeSoft,
-          ),
           boxShadow: value
               ? const [
                   BoxShadow(
@@ -108,6 +105,10 @@ class GlassSwitch extends StatelessWidget {
                   ),
                 ]
               : null,
+          borderRadius: BorderRadius.circular(Corners.pill),
+          border: Border.all(
+            color: value ? Palette.selectionStroke : Palette.glassStrokeSoft,
+          ),
         ),
         child: AnimatedAlign(
           duration: Motion.normal,
@@ -118,10 +119,10 @@ class GlassSwitch extends StatelessWidget {
             height: knob,
             decoration: BoxDecoration(
               color: value ? Palette.textHi : Palette.textMid,
-              shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 1)),
               ],
+              shape: BoxShape.circle,
             ),
           ),
         ),
@@ -198,18 +199,11 @@ class PanelHeader extends StatelessWidget {
         Icon(icon, size: 18, color: Palette.textHi),
         const SizedBox(width: 10),
         Expanded(child: Text(title, style: AppText.title)),
-        Pressable(
+        GlassIconButton(
+          icon: Icons.close,
+          label: 'Close $title',
+          size: 48,
           onTap: onClose,
-          child: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Palette.glassFillStrong,
-              border: Border.all(color: Palette.glassStrokeSoft),
-            ),
-            child: const Icon(Icons.close, size: 16, color: Palette.textMid),
-          ),
         ),
       ],
     );

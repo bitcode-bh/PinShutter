@@ -228,7 +228,8 @@ class ProCamera2(
             result.error("open_failed", e.message, null)
         } catch (e: Exception) {
             Log.e(TAG, "open exception", e)
-            result.error("open_failed", e.message, null)
+            val code = if (e is SecurityException) "camera_permission" else "open_failed"
+            result.error(code, e.message, null)
         }
     }
 

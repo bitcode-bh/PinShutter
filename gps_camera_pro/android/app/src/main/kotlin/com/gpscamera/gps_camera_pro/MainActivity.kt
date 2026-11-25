@@ -2,6 +2,8 @@ package com.gpscamera.gps_camera_pro
 
 import android.content.ContentValues
 import android.graphics.BitmapFactory
+import android.media.ExifInterface
+import io.flutter.plugin.common.StandardMethodCodec
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
@@ -23,8 +25,10 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)
-            .setMethodCallHandler { call, result ->
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(
+            messenger, channel, StandardMethodCodec.INSTANCE, messenger.makeBackgroundTaskQueue()
+        ).setMethodCallHandler { call, result ->
                 when (call.method) {
 
                     // Detect back-camera hardware capabilities via Camera2.
@@ -190,6 +194,21 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    "setPhotoLocation" -> {
+                        val bytes = call.argument<ByteArray>("bytes")
+                        val lat = call.argument<Double>("latitude")
+                        val lon = call.argument<Double>("longitude")
+                        if (bytes == null) {
+                            result.error("ARGS", "bytes required", null)
+                        } else {
+                            try {
+                                result.success(setPhotoLocation(bytes, lat, lon))
+                            } catch (e: Exception) {
+                                result.error("EXIF_FAILED", e.message, null)
+                            }
+                        }
+                    }
+
                     "saveImage" -> {
                         val bytes = call.argument<ByteArray>("bytes")
                         val name = call.argument<String>("name") ?: "capture.jpg"
@@ -214,10 +233,21 @@ class MainActivity : FlutterActivity() {
                         }
                         try {
                             if (ref.startsWith("content://")) {
-                                contentResolver.delete(android.net.Uri.parse(ref), null, null)
+                                val uri = android.net.Uri.parse(ref)
+                                val deleted = contentResolver.delete(uri, null, null)
+                                if (deleted == 0) {
+                                    val stillExists = contentResolver.query(
+                                        uri, arrayOf(MediaStore.Images.Media._ID), null, null, null
+                                    )?.use { it.moveToFirst() }
+                                    if (stillExists != false) {
+                                        throw java.io.IOException("Could not verify gallery deletion")
+                                    }
+                                }
                             } else {
                                 val file = File(ref)
-                                if (file.exists()) file.delete()
+                                if (file.exists() && !file.delete()) {
+                                    throw java.io.IOException("Could not delete gallery photo")
+                                }
                                 android.media.MediaScannerConnection.scanFile(
                                     this, arrayOf(ref), null, null
                                 )
@@ -229,24 +259,33 @@ class MainActivity : FlutterActivity() {
                     }
 
                     // Composite a native full-res JPEG with a stamp PNG drawn over it.
-                    // The stamp is scaled to the JPEG width and drawn at the bottom.
+                    // The stamp is scaled to the JPEG width and drawn at the configured edge.
                     "compositeNativeJpeg" -> {
                         val jpeg = call.argument<ByteArray>("jpeg")
                         val stampPng = call.argument<ByteArray>("stampPng")
                         val quality = call.argument<Int>("quality") ?: 92
+                        val stampAtTop = call.argument<Boolean>("stampAtTop") == true
                         if (jpeg == null || stampPng == null) {
                             result.error("ARGS", "jpeg and stampPng required", null)
                             return@setMethodCallHandler
                         }
                         try {
-                            val base = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+                            val base = decodeUprightJpeg(jpeg)
                             val stamp = BitmapFactory.decodeByteArray(stampPng, 0, stampPng.size)
-                            val canvas = android.graphics.Canvas(base)
-                            val scale = base.width.toFloat() / stamp.width
-                            val scaledH = (stamp.height * scale).toInt()
-                            val scaledStamp = android.graphics.Bitmap.createScaledBitmap(stamp, base.width, scaledH, true)
-                            canvas.drawBitmap(scaledStamp, 0f, (base.height - scaledH).toFloat(), null)
-                            scaledStamp.recycle()
+                                ?: error("Stamp decode failed")
+                            val scale = minOf(
+                                base.width.toFloat() / stamp.width,
+                                base.height.toFloat() / stamp.height
+                            )
+                            val width = stamp.width * scale
+                            val height = stamp.height * scale
+                            val left = (base.width - width) / 2
+                            val top = if (stampAtTop) 0f else base.height - height
+                            val destination = android.graphics.RectF(left, top, left + width, top + height)
+                            android.graphics.Canvas(base).drawBitmap(
+                                stamp, null, destination,
+                                android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                            )
                             stamp.recycle()
                             val out = ByteArrayOutputStream()
                             base.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
@@ -347,6 +386,73 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun decodeUprightJpeg(jpeg: ByteArray): android.graphics.Bitmap {
+        val options = BitmapFactory.Options().apply { inMutable = true }
+        val source = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, options)
+            ?: error("JPEG decode failed")
+        val orientation = ExifInterface(jpeg.inputStream()).getAttributeInt(
+            ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+        )
+        val transform = android.graphics.Matrix().apply {
+            when (orientation) {
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
+                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                    setRotate(90f)
+                    postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
+                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                    setRotate(-90f)
+                    postScale(-1f, 1f)
+                }
+                ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(-90f)
+            }
+        }
+        if (transform.isIdentity) return source
+        val upright = android.graphics.Bitmap.createBitmap(
+            source, 0, 0, source.width, source.height, transform, true
+        )
+        source.recycle()
+        if (upright.isMutable) return upright
+        return upright.copy(android.graphics.Bitmap.Config.ARGB_8888, true).also { upright.recycle() }
+    }
+
+    private fun setPhotoLocation(bytes: ByteArray, lat: Double?, lon: Double?): ByteArray {
+        val file = File.createTempFile("gps-exif-", ".jpg", cacheDir)
+        try {
+            file.writeBytes(bytes)
+            val exif = ExifInterface(file.absolutePath)
+            for (tag in listOf(
+                ExifInterface.TAG_GPS_LATITUDE, ExifInterface.TAG_GPS_LATITUDE_REF,
+                ExifInterface.TAG_GPS_LONGITUDE, ExifInterface.TAG_GPS_LONGITUDE_REF,
+                ExifInterface.TAG_GPS_ALTITUDE, ExifInterface.TAG_GPS_ALTITUDE_REF,
+                ExifInterface.TAG_GPS_DEST_LATITUDE, ExifInterface.TAG_GPS_DEST_LATITUDE_REF,
+                ExifInterface.TAG_GPS_DEST_LONGITUDE, ExifInterface.TAG_GPS_DEST_LONGITUDE_REF
+            )) exif.setAttribute(tag, null)
+
+            if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, exifCoordinate(lat))
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, if (lat < 0) "S" else "N")
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, exifCoordinate(lon))
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF, if (lon < 0) "W" else "E")
+            }
+            exif.saveAttributes()
+            return file.readBytes()
+        } finally {
+            file.delete()
+        }
+    }
+
+    private fun exifCoordinate(coordinate: Double): String {
+        val totalMillis = kotlin.math.round(abs(coordinate) * 3_600_000).toLong()
+        val degrees = totalMillis / 3_600_000
+        val minutes = (totalMillis / 60_000) % 60
+        val seconds = totalMillis % 60_000
+        return "$degrees/1,$minutes/1,$seconds/1000"
+    }
+
     // Returns a content:// URI on API 29+ or a file path on older Android.
     private fun saveImage(bytes: ByteArray, name: String, album: String): String {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -358,11 +464,16 @@ class MainActivity : FlutterActivity() {
             }
             val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw Exception("MediaStore insert failed")
-            contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                ?: throw Exception("openOutputStream failed")
-            values.clear()
-            values.put(MediaStore.Images.Media.IS_PENDING, 0)
-            contentResolver.update(uri, values, null, null)
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw Exception("openOutputStream failed")
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+            } catch (e: Exception) {
+                runCatching { contentResolver.delete(uri, null, null) }
+                throw e
+            }
             return uri.toString()
         } else {
             val dir = File(

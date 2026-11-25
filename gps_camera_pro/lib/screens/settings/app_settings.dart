@@ -111,9 +111,8 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
             padding: expandRight
                 ? const EdgeInsets.only(left: 8)
                 : const EdgeInsets.only(right: 8),
-            child: GlassSurface(
-              radius: Corners.lg,
-              blur: Blurs.chip,
+            child: GlassSurface.menu(
+              radius: Corners.pill,
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -164,53 +163,20 @@ class _AppSettingsStripState extends State<AppSettingsStrip> {
 
   // The settings gear stays visible when collapsed and flips to a close (✕)
   // while the strip is expanded.
-  Widget _toggleButton() {
-    return Pressable(
-      onTap: _toggle,
-      child: AnimatedContainer(
-        duration: Motion.normal,
-        curve: Motion.emphasized,
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: _open ? Palette.selectionGradient : null,
-          color: _open ? null : Palette.glassFillStrong,
-          border: Border.all(
-              color: _open ? Palette.selectionStroke : Palette.glassStroke),
-          boxShadow: _open
-              ? const [
-                  BoxShadow(
-                    color: Palette.selectionGlow,
-                    blurRadius: 14,
-                    spreadRadius: -3,
-                  )
-                ]
-              : null,
-        ),
-        child: AnimatedSwitcher(
-          duration: Motion.fast,
-          transitionBuilder: (c, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: c),
-          ),
-          child: Icon(
-            _open ? Icons.close : Icons.settings_outlined,
-            key: ValueKey(_open),
-            size: 20,
-            color: Palette.textHi,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _toggleButton() => GlassIconButton(
+    icon: _open ? Icons.close : Icons.settings_outlined,
+    label: _open ? 'Close settings' : 'Open settings',
+    active: _open,
+    size: 46,
+    onTap: _toggle,
+  );
 }
 
 /// Opens a category's settings in a centered glass popup.
 Future<void> showSettingsCategory(BuildContext context, SettingsCat cat) {
   return showDialog<void>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.6),
+    barrierColor: Colors.black26,
     builder: (_) => _SettingsPopup(cat: cat),
   );
 }
@@ -230,11 +196,7 @@ class _SettingsPopup extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 380),
           child: Material(
             color: Colors.transparent,
-            child: GlassSurface(
-              radius: Corners.xl,
-              blur: Blurs.sheet,
-              fill: const Color(0xE6080C16),
-              stroke: Palette.glassStroke,
+            child: GlassSurface.menu(
               padding: const EdgeInsets.fromLTRB(Insets.lg, Insets.md, Insets.lg, Insets.lg),
               child: ListenableBuilder(
               listenable: Listenable.merge([s, t]),
@@ -243,14 +205,12 @@ class _SettingsPopup extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (cat != SettingsCat.stamp) ...[
-                      PanelHeader(
-                        icon: cat.icon,
-                        title: cat.label,
-                        onClose: () => Navigator.of(context).pop(),
-                      ),
-                      const SizedBox(height: Insets.sm),
-                    ],
+                    PanelHeader(
+                      icon: cat.icon,
+                      title: cat.label,
+                      onClose: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(height: Insets.sm),
                     Flexible(
                       child: SingleChildScrollView(
                         child: Column(

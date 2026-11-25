@@ -26,12 +26,15 @@ class GeoStamp extends StatelessWidget {
   /// When true the date/time ticks live (off for static gallery thumbnails).
   final bool live;
 
+  /// A saved stamp must render independently of the live camera texture.
+  final bool forCapture;
+
   /// When false the mini-map renders as a painted placeholder instead of a live
   /// tile map — used by the small previews to avoid many map engines at once.
   final bool realMap;
 
-  /// Callback when the mini-map is double-tapped (not active in preview)
-  final VoidCallback? onMapDoubleTap;
+  /// Callback when the mini-map is tapped (not active in preview)
+  final VoidCallback? onMapTap;
 
   const GeoStamp({
     super.key,
@@ -40,8 +43,9 @@ class GeoStamp extends StatelessWidget {
     required this.settings,
     this.preview = false,
     this.live = true,
+    this.forCapture = false,
     this.realMap = true,
-    this.onMapDoubleTap,
+    this.onMapTap,
   });
 
   double get _s => config.size.scale * (preview ? 0.82 : 1.0);
@@ -68,38 +72,42 @@ class GeoStamp extends StatelessWidget {
         : null;
 
     double mapDragDy = 0;
-    final map = (mapWidget != null && onMapDoubleTap != null)
-        ? GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onDoubleTap: onMapDoubleTap,
-            // No horizontal-drag handlers here: a horizontal swipe on the map
-            // must fall through to the parent stamp's pan handler, which toggles
-            // the map side (left ↔ right). Vertical drag still cycles map style.
-            onVerticalDragStart: (_) {
-              mapDragDy = 0;
-            },
-            onVerticalDragUpdate: (details) {
-              mapDragDy += details.delta.dy;
-            },
-            onVerticalDragEnd: (_) {
-              if (mapDragDy.abs() >= 20) {
-                final currentKind = settings.mapKind;
-                final kinds = MapKind.values;
-                final currentIndex = kinds.indexOf(currentKind);
-                int nextIndex;
-                if (mapDragDy < 0) {
-                  // Swipe up -> next style
-                  nextIndex = (currentIndex + 1) % kinds.length;
-                } else {
-                  // Swipe down -> previous style
-                  nextIndex = (currentIndex - 1 + kinds.length) % kinds.length;
+    final map = (mapWidget != null && onMapTap != null)
+        ? Semantics(
+            label: 'Open location map',
+            button: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onMapTap,
+              // No horizontal-drag handlers here: a horizontal swipe on the map
+              // must fall through to the parent stamp's pan handler, which toggles
+              // the map side (left ↔ right). Vertical drag still cycles map style.
+              onVerticalDragStart: (_) {
+                mapDragDy = 0;
+              },
+              onVerticalDragUpdate: (details) {
+                mapDragDy += details.delta.dy;
+              },
+              onVerticalDragEnd: (_) {
+                if (mapDragDy.abs() >= 20) {
+                  final currentKind = settings.mapKind;
+                  final kinds = MapKind.values;
+                  final currentIndex = kinds.indexOf(currentKind);
+                  int nextIndex;
+                  if (mapDragDy < 0) {
+                    // Swipe up -> next style
+                    nextIndex = (currentIndex + 1) % kinds.length;
+                  } else {
+                    // Swipe down -> previous style
+                    nextIndex = (currentIndex - 1 + kinds.length) % kinds.length;
+                  }
+                  settings.update(() {
+                    settings.mapKind = kinds[nextIndex];
+                  });
                 }
-                settings.update(() {
-                  settings.mapKind = kinds[nextIndex];
-                });
-              }
-            },
-            child: mapWidget,
+              },
+              child: IgnorePointer(child: mapWidget),
+            ),
           )
         : mapWidget;
 
@@ -163,6 +171,7 @@ class GeoStamp extends StatelessWidget {
               child: GlassSurface(
                 radius: Corners.sm,
                 blur: blurSigma,
+                refract: !forCapture,
                 fill: bgFill,
                 stroke: Colors.transparent,
                 padding: EdgeInsets.zero,

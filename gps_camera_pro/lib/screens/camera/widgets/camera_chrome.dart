@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/stash_dial.dart';
 import '../../../core/design/palette.dart';
 import '../../../core/design/text_styles.dart';
 import '../../../core/design/tokens.dart';
@@ -41,8 +41,8 @@ class _PulseDotState extends State<PulseDot> with SingleTickerProviderStateMixin
       height: widget.size,
       decoration: BoxDecoration(
         color: widget.color,
-        shape: BoxShape.circle,
         boxShadow: [BoxShadow(color: widget.color.withValues(alpha: 0.9), blurRadius: 8)],
+        shape: BoxShape.circle,
       ),
     );
     if (!widget.pulse) return dot;
@@ -230,91 +230,6 @@ class ModeStrip extends StatelessWidget {
   }
 }
 
-/// The hero shutter button — gradient ring, springy press, busy spinner.
-class ShutterButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final bool busy;
-  final bool video;
-  const ShutterButton({super.key, required this.onTap, this.busy = false, this.video = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      scale: 0.9,
-      onTap: busy ? null : onTap,
-      child: SizedBox(
-        width: 46,
-        height: 46,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Core.
-            AnimatedContainer(
-              duration: Motion.normal,
-              curve: Motion.emphasized,
-              width: busy ? 24 : (video ? 24 : 46),
-              height: busy ? 24 : (video ? 24 : 46),
-              decoration: BoxDecoration(
-                color: video ? Palette.danger : Colors.white,
-                shape: video ? BoxShape.rectangle : BoxShape.circle,
-                borderRadius: video ? BorderRadius.circular(busy ? 6 : 8) : null,
-              ),
-            ),
-            if (busy)
-              const SizedBox(
-                width: 46,
-                height: 46,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation(Palette.accentMuted),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Rounded thumbnail of the most recent in-session capture; tapping opens the
-/// phone's gallery app.
-class GalleryThumb extends StatelessWidget {
-  final Uint8List? thumb;
-  final VoidCallback onTap;
-  final bool hasBorder;
-  const GalleryThumb({
-    super.key,
-    required this.thumb,
-    required this.onTap,
-    this.hasBorder = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(Corners.sm),
-          border: Border.all(
-            color: hasBorder ? Palette.glassStroke : Colors.white.withValues(alpha: 0.15),
-            width: 1.2,
-          ),
-          color: hasBorder ? Palette.glassFillStrong : Colors.white.withValues(alpha: 0.12),
-        ),
-        child: thumb != null
-            ? Image.memory(thumb!,
-                fit: BoxFit.cover, gaplessPlayback: true, cacheWidth: 144)
-            : const Icon(Icons.photo_library_outlined,
-                size: 20, color: Palette.textMid),
-      ),
-    );
-  }
-}
-
 /// A clean vertical zoom selector with no outer container — just the levels
 /// in a column, with a vertical track line and an animated indicator next to it.
 /// A circular glass button that displays text instead of an icon (used for aspect ratio).
@@ -357,9 +272,7 @@ class GlassTextButton extends StatelessWidget {
     if (active) {
       body = DecoratedBox(
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
           gradient: Palette.selectionGradient,
-          border: Border.all(color: Palette.selectionStroke, width: 1),
           boxShadow: const [
             BoxShadow(
               color: Palette.selectionGlow,
@@ -367,13 +280,14 @@ class GlassTextButton extends StatelessWidget {
               spreadRadius: -2,
             ),
           ],
+          shape: BoxShape.circle,
+          border: Border.all(color: Palette.selectionStroke, width: 1),
         ),
         child: inner,
       );
     } else {
       body = DecoratedBox(
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
           color: hasBorder ? null : Colors.white.withValues(alpha: 0.12),
           gradient: hasBorder
               ? const LinearGradient(
@@ -382,6 +296,7 @@ class GlassTextButton extends StatelessWidget {
                   colors: [Color(0x70121A2C), Palette.glassFillStrong],
                 )
               : null,
+          shape: BoxShape.circle,
           border: Border.all(
             color: hasBorder ? Palette.glassStroke : Colors.white.withValues(alpha: 0.15),
             width: 1,
@@ -566,117 +481,50 @@ class ProControlSelector extends StatelessWidget {
       (a, b) => (a.value - activeValue).abs() < (b.value - activeValue).abs() ? a : b,
     );
 
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 2,
-          height: 180,
-          decoration: BoxDecoration(
-            color: Colors.white12,
-            borderRadius: BorderRadius.circular(1),
-          ),
-        ),
-        Positioned(
-          height: 180,
-          child: AnimatedAlign(
-            duration: Motion.fast,
-            curve: Motion.emphasized,
-            alignment: Alignment(
-              0,
-              items.length <= 1
-                  ? 0
-                  : (items.indexOf(activeItem) / (items.length - 1)) * 2 - 1,
-            ),
-            child: Container(
-              width: 2,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Palette.accentMuted,
-                borderRadius: BorderRadius.circular(1),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Palette.selectionGlow,
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final item in items)
-              Pressable(
-                onTap: () {
-                  switch (mode) {
-                    case ProControlMode.zoom:
-                      onZoomChanged(item.value);
-                      break;
-                    case ProControlMode.exposure:
-                      onExposureChanged(item.value);
-                      break;
-                    case ProControlMode.iso:
-                      final isoValues = caps.isoValues();
-                      final idx = item.value.round();
-                      onIsoChanged(idx == 0 ? null : isoValues[idx - 1]);
-                      break;
-                    case ProControlMode.shutter:
-                      final shutters = caps.shutterSpeedsNs();
-                      final idx = item.value.round();
-                      onShutterChanged(idx == 0 ? null : shutters[idx - 1]);
-                      break;
-                    case ProControlMode.wb:
-                      if (settings.whiteBalance == ProWhiteBalance.kelvin) {
-                        settings.update(() => settings.kelvin = item.value.round());
-                        onWbChanged(ProWhiteBalance.kelvin);
-                      } else {
-                        final wbOptions = supportedWhiteBalances(caps);
-                        onWbChanged(wbOptions[item.value.round()]);
-                      }
-                      break;
-                    case ProControlMode.focus:
-                      onFocusChanged(item.value);
-                      break;
-                    case ProControlMode.metering:
-                      onMeteringChanged(MeteringMode.values[item.value.round()]);
-                      break;
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: Motion.fast,
-                  curve: Motion.emphasized,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: item.value == activeItem.value
-                        ? Palette.selectionFill
-                        : Colors.transparent,
-                    border: Border.all(
-                      color: item.value == activeItem.value
-                          ? Palette.selectionStroke
-                          : Colors.transparent,
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    item.label,
-                    style: AppText.label.copyWith(
-                      fontSize: 10,
-                      fontWeight: item.value == activeItem.value ? FontWeight.w800 : FontWeight.w600,
-                      color: item.value == activeItem.value ? Palette.accentMuted : Palette.textHi,
-                      shadows: const [
-                        Shadow(color: Colors.black, blurRadius: 4),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
+    return SizedBox(
+      height: 180,
+      child: StashDial(
+        key: ValueKey(mode),
+        axis: Axis.vertical,
+        labels: [for (final item in items) item.label],
+        selected: items.indexOf(activeItem),
+        onChanged: (index) {
+          final value = items[index].value;
+          switch (mode) {
+            case ProControlMode.zoom:
+              onZoomChanged(value);
+              break;
+            case ProControlMode.exposure:
+              onExposureChanged(value);
+              break;
+            case ProControlMode.iso:
+              final isoValues = caps.isoValues();
+              final idx = value.round();
+              onIsoChanged(idx == 0 ? null : isoValues[idx - 1]);
+              break;
+            case ProControlMode.shutter:
+              final shutters = caps.shutterSpeedsNs();
+              final idx = value.round();
+              onShutterChanged(idx == 0 ? null : shutters[idx - 1]);
+              break;
+            case ProControlMode.wb:
+              if (settings.whiteBalance == ProWhiteBalance.kelvin) {
+                settings.update(() => settings.kelvin = value.round());
+                onWbChanged(ProWhiteBalance.kelvin);
+              } else {
+                final wbOptions = supportedWhiteBalances(caps);
+                onWbChanged(wbOptions[value.round()]);
+              }
+              break;
+            case ProControlMode.focus:
+              onFocusChanged(value);
+              break;
+            case ProControlMode.metering:
+              onMeteringChanged(MeteringMode.values[value.round()]);
+              break;
+          }
+        },
+      ),
     );
   }
 

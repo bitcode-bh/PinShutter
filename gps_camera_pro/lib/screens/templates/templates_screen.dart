@@ -34,8 +34,6 @@ class TemplatesScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             decoration: BoxDecoration(
               gradient: Palette.selectionGradient,
-              borderRadius: BorderRadius.circular(Corners.pill),
-              border: Border.all(color: Palette.selectionStroke, width: 1),
               boxShadow: const [
                 BoxShadow(
                   color: Palette.selectionGlow,
@@ -43,6 +41,8 @@ class TemplatesScreen extends StatelessWidget {
                   spreadRadius: -3,
                 ),
               ],
+              borderRadius: BorderRadius.circular(Corners.pill),
+              border: Border.all(color: Palette.selectionStroke, width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -133,7 +133,7 @@ class _TemplateCard extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF233149), Color(0xFF11182A), Color(0xFF1A2336)],
+                    colors: [Color(0xFF362F3A), Palette.ink, Palette.ink2],
                   ),
                 ),
                 child: Align(
@@ -188,9 +188,9 @@ class _SelectMark extends StatelessWidget {
       width: 26,
       height: 26,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
         gradient: selected ? Palette.selectionGradient : null,
         color: selected ? null : Palette.glassFillStrong,
+        shape: BoxShape.circle,
         border: Border.all(
           color: selected ? Palette.selectionStroke : Palette.glassStroke,
         ),

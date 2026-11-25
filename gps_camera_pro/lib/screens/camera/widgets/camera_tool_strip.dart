@@ -34,6 +34,8 @@ class CameraToolStrip extends StatefulWidget {
   final double exposure;
   final bool canExpose;
   final VoidCallback onExposure;
+  final VoidCallback? onTogglePro;
+  final bool recording;
 
   /// Kept for API compatibility with the camera screen layout.
   final bool alignLeft;
@@ -58,6 +60,8 @@ class CameraToolStrip extends StatefulWidget {
     required this.exposure,
     required this.canExpose,
     required this.onExposure,
+    this.onTogglePro,
+    this.recording = false,
     this.alignLeft = false,
     this.onOpenChanged,
     this.onPanelChanged,
@@ -83,18 +87,21 @@ class _CameraToolStripState extends State<CameraToolStrip> {
   @override
   void didUpdateWidget(covariant CameraToolStrip oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // The parent can force the strip closed (e.g. a tap-to-focus on the frame).
-    if (oldWidget.open != widget.open && !widget.open) {
-      _view = _ToolView.collapsed;
+    if (oldWidget.open != widget.open) {
+      if (!widget.open) {
+        _view = _ToolView.collapsed;
+      } else if (_view == _ToolView.collapsed) {
+        _view = _ToolView.panel;
+      }
     }
   }
 
   ({IconData icon, String label}) get _flashInfo => switch (widget.flash) {
-        FlashMode.auto => (icon: Icons.flash_auto, label: 'Auto'),
-        FlashMode.always => (icon: Icons.flash_on, label: 'On'),
-        FlashMode.off => (icon: Icons.flash_off, label: 'Off'),
-        FlashMode.torch => (icon: Icons.highlight, label: 'Torch'),
-      };
+    FlashMode.auto => (icon: Icons.flash_auto, label: 'Auto'),
+    FlashMode.always => (icon: Icons.flash_on, label: 'On'),
+    FlashMode.off => (icon: Icons.flash_off, label: 'Off'),
+    FlashMode.torch => (icon: Icons.highlight, label: 'Torch'),
+  };
 
   void _setView(_ToolView v) {
     final wasPanel = _view == _ToolView.panel;
@@ -135,7 +142,10 @@ class _CameraToolStripState extends State<CameraToolStrip> {
           opacity: isOpen ? 1.0 : 0.0,
           duration: Motion.normal,
           curve: Motion.emphasized,
-          child: _revealStrip(expandRight: expandRight, screenWidth: screenWidth),
+          child: _revealStrip(
+            expandRight: expandRight,
+            screenWidth: screenWidth,
+          ),
         ),
       ),
     );
@@ -205,10 +215,7 @@ class _CameraToolStripState extends State<CameraToolStrip> {
         layoutBuilder: (currentChild, previousChildren) => Stack(
           alignment: stackAlign,
           clipBehavior: Clip.none,
-          children: [
-            ...previousChildren,
-            ?currentChild,
-          ],
+          children: [...previousChildren, ?currentChild],
         ),
         child: isPanel ? panel : row,
       ),
@@ -220,46 +227,13 @@ class _CameraToolStripState extends State<CameraToolStrip> {
     required IconData icon,
     required bool active,
     required VoidCallback onTap,
-  }) {
-    return Pressable(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: Motion.normal,
-        curve: Motion.emphasized,
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: active ? Palette.selectionGradient : null,
-          color: active ? null : Palette.glassFillStrong,
-          border: Border.all(
-              color: active ? Palette.selectionStroke : Palette.glassStroke),
-          boxShadow: active
-              ? const [
-                  BoxShadow(
-                    color: Palette.selectionGlow,
-                    blurRadius: 14,
-                    spreadRadius: -3,
-                  )
-                ]
-              : null,
-        ),
-        child: AnimatedSwitcher(
-          duration: Motion.fast,
-          transitionBuilder: (c, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: c),
-          ),
-          child: Icon(
-            icon,
-            key: ValueKey(icon),
-            size: active ? 24 : 20,
-            color: Palette.textHi,
-          ),
-        ),
-      ),
-    );
-  }
+  }) => GlassIconButton(
+    icon: icon,
+    label: active ? 'Close camera tools' : 'Open camera tools',
+    active: active,
+    size: 46,
+    onTap: onTap,
+  );
 
   // ── Stage 2: the horizontally-scrolling icon strip ────────────────────
   Widget _revealStrip({bool expandRight = true, required double screenWidth}) {
@@ -270,22 +244,32 @@ class _CameraToolStripState extends State<CameraToolStrip> {
           : const EdgeInsets.only(right: 8),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxW),
-        child: GlassSurface(
+        child: GlassSurface.menu(
           radius: Corners.pill,
-          blur: Blurs.chip,
-          fill: Palette.glassFillStrong,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: ListenableBuilder(
             listenable: _s,
-            builder: (context, _) => SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final t in _tools()) SizedBox(width: 54, child: t),
-                ],
-              ),
+            builder: (context, _) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final t in _tools()) SizedBox(width: 54, child: t),
+                      ],
+                    ),
+                  ),
+                ),
+                GlassIconButton(
+                  icon: Icons.apps_outlined,
+                  label: 'All camera tools',
+                  onTap: () => _setView(_ToolView.panel),
+                ),
+              ],
             ),
           ),
         ),
@@ -298,17 +282,19 @@ class _CameraToolStripState extends State<CameraToolStrip> {
     final maxW = screenWidth - 40;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxW),
-      child: GlassSurface(
-        radius: Corners.lg,
-        blur: Blurs.panel,
-        fill: Palette.glassFillStrong,
-        padding: const EdgeInsets.fromLTRB(Insets.md, Insets.sm, Insets.md, Insets.md),
+      child: GlassSurface.menu(
+        padding: const EdgeInsets.fromLTRB(
+          Insets.md,
+          Insets.sm,
+          Insets.md,
+          Insets.md,
+        ),
         child: ListenableBuilder(
           listenable: _s,
           builder: (context, _) {
             final t = _tools();
-            final rowCount = (t.length > 10) ? 3 : 2;
-            final perRow = (t.length / rowCount).ceil();
+            final perRow = ((maxW - 2 * Insets.md) / 48).floor().clamp(1, 6);
+            final rowCount = (t.length / perRow).ceil();
 
             // Slice into fixed-width rows and pad the final row with empty
             // slots so every column lines up on the same grid — keeping icon
@@ -354,13 +340,15 @@ class _CameraToolStripState extends State<CameraToolStrip> {
     final f = _flashInfo;
     return <Widget>[
       _ToolTile(
+        name: 'Camera mode',
         icon: _s.proMode ? Icons.tune_rounded : Icons.auto_awesome,
         label: _s.proMode ? 'Pro' : 'Auto',
         active: _s.proMode,
-        onTap: () => _s.update(() => _s.proMode = !_s.proMode),
+        onTap: widget.onTogglePro,
       ),
       if (CameraCapabilityService.instance.hasFlash)
         _ToolTile(
+          name: 'Flash',
           icon: f.icon,
           label: f.label,
           active: widget.flash != FlashMode.off,
@@ -368,6 +356,7 @@ class _CameraToolStripState extends State<CameraToolStrip> {
         ),
       if (CameraCapabilityService.instance.hasHdr)
         _ToolTile(
+          name: 'HDR',
           icon: _s.hdrMode == HdrMode.off
               ? Icons.hdr_off
               : (_s.hdrMode == HdrMode.auto ? Icons.hdr_auto : Icons.hdr_on),
@@ -382,23 +371,33 @@ class _CameraToolStripState extends State<CameraToolStrip> {
         ),
       if (CameraCapabilityService.instance.hasNight)
         _ToolTile(
-          icon: _s.nightMode == NightMode.on ? Icons.nightlight_round : Icons.nightlight_outlined,
+          name: 'Night mode',
+          icon: _s.nightMode == NightMode.on
+              ? Icons.nightlight_round
+              : Icons.nightlight_outlined,
           label: _s.nightMode == NightMode.on ? 'Night On' : 'Night Off',
           active: _s.nightMode == NightMode.on,
           onTap: () => _s.update(() {
-            _s.nightMode = _s.nightMode == NightMode.on ? NightMode.off : NightMode.on;
+            _s.nightMode = _s.nightMode == NightMode.on
+                ? NightMode.off
+                : NightMode.on;
           }),
         ),
       _ToolTile(
-        icon: _s.timerSeconds == 0 ? Icons.timer_off_outlined : Icons.timer_outlined,
+        name: 'Self-timer',
+        icon: _s.timerSeconds == 0
+            ? Icons.timer_off_outlined
+            : Icons.timer_outlined,
         label: _s.timerSeconds == 0 ? 'Off' : '${_s.timerSeconds}s',
         active: _s.timerSeconds != 0,
         onTap: () => _s.update(() {
           const order = [0, 3, 10];
-          _s.timerSeconds = order[(order.indexOf(_s.timerSeconds) + 1) % order.length];
+          _s.timerSeconds =
+              order[(order.indexOf(_s.timerSeconds) + 1) % order.length];
         }),
       ),
       _ToolTile(
+        name: 'Aspect ratio',
         icon: Icons.aspect_ratio,
         label: _s.captureRatio.label,
         active: _s.captureRatio != CaptureRatio.full,
@@ -408,28 +407,33 @@ class _CameraToolStripState extends State<CameraToolStrip> {
         }),
       ),
       _ToolTile(
+        name: 'Resolution',
         icon: Icons.camera_outlined,
         label: CameraCapabilityService.instance
             .resolutionAt(_s.captureResolutionIndex)
             .mpLabel,
-        active: _s.captureResolutionIndex <
-            CameraCapabilityService.instance.resolutions.length - 1
-                ? true
-                : _s.captureResolutionIndex == 0,
-        onTap: () => _s.update(() {
-          final count =
-              CameraCapabilityService.instance.resolutions.length;
-          _s.captureResolutionIndex =
-              (_s.captureResolutionIndex + 1) % count;
-        }),
+        active:
+            _s.captureResolutionIndex <
+                CameraCapabilityService.instance.resolutions.length - 1
+            ? true
+            : _s.captureResolutionIndex == 0,
+        onTap: widget.recording
+            ? null
+            : () => _s.update(() {
+                final count =
+                    CameraCapabilityService.instance.resolutions.length;
+                _s.captureResolutionIndex =
+                    (_s.captureResolutionIndex + 1) % count;
+              }),
       ),
       _ToolTile(
+        name: 'Grid',
         icon: Icons.grid_3x3,
         label: !_s.gridLines
             ? 'Off'
             : (_s.gridType == GridType.thirds
-                ? '3x3'
-                : (_s.gridType == GridType.square ? '4x4' : 'Golden')),
+                  ? '3x3'
+                  : (_s.gridType == GridType.square ? '4x4' : 'Golden')),
         active: _s.gridLines,
         onTap: () => _s.update(() {
           if (!_s.gridLines) {
@@ -445,24 +449,30 @@ class _CameraToolStripState extends State<CameraToolStrip> {
         }),
       ),
       _ToolTile(
+        name: 'Level',
         icon: widget.level ? Icons.straighten : Icons.straighten,
         label: widget.level ? 'On' : 'Off',
         active: widget.level,
         onTap: widget.onLevel,
       ),
       _ToolTile(
+        name: 'Histogram',
         icon: Icons.bar_chart,
         label: _s.histogram ? 'On' : 'Off',
         active: _s.histogram,
         onTap: () => _s.update(() => _s.histogram = !_s.histogram),
       ),
       _ToolTile(
-        icon: widget.focusLocked ? Icons.center_focus_strong : Icons.center_focus_weak,
+        name: 'Focus lock',
+        icon: widget.focusLocked
+            ? Icons.center_focus_strong
+            : Icons.center_focus_weak,
         label: widget.focusLocked ? 'Lock' : 'Auto',
         active: widget.focusLocked,
         onTap: widget.onFocus,
       ),
       _ToolTile(
+        name: 'Exposure',
         icon: Icons.exposure,
         label: widget.canExpose
             ? '${widget.exposure > 0 ? '+' : ''}${widget.exposure.toStringAsFixed(widget.exposure % 1 == 0 ? 0 : 1)}'
@@ -472,36 +482,44 @@ class _CameraToolStripState extends State<CameraToolStrip> {
       ),
       if (CameraCapabilityService.instance.manualFocus)
         _ToolTile(
+          name: 'Focus peaking',
           icon: Icons.center_focus_strong,
           label: _s.focusPeaking ? 'Peak On' : 'Peak Off',
           active: _s.focusPeaking,
           onTap: () => _s.update(() => _s.focusPeaking = !_s.focusPeaking),
         ),
       _ToolTile(
+        name: 'Zebra stripes',
         icon: Icons.warning_amber,
         label: _s.zebraStripes ? 'Zebra On' : 'Zebra Off',
         active: _s.zebraStripes,
         onTap: () => _s.update(() => _s.zebraStripes = !_s.zebraStripes),
       ),
       _ToolTile(
+        name: 'Save original',
         icon: Icons.save_alt,
         label: _s.saveOriginal ? 'Orig On' : 'Orig Off',
         active: _s.saveOriginal,
         onTap: () => _s.update(() => _s.saveOriginal = !_s.saveOriginal),
       ),
       _ToolTile(
+        name: 'Mirror',
         icon: Icons.flip,
         label: _s.mirror ? 'On' : 'Off',
         active: _s.mirror,
         onTap: () => _s.update(() => _s.mirror = !_s.mirror),
       ),
       _ToolTile(
-        icon: _s.shutterSound ? Icons.volume_up_outlined : Icons.volume_off_outlined,
+        name: 'Shutter sound',
+        icon: _s.shutterSound
+            ? Icons.volume_up_outlined
+            : Icons.volume_off_outlined,
         label: _s.shutterSound ? 'On' : 'Off',
         active: _s.shutterSound,
         onTap: () => _s.update(() => _s.shutterSound = !_s.shutterSound),
       ),
       _ToolTile(
+        name: 'Save GPS metadata',
         icon: Icons.location_on_outlined,
         label: _s.saveLocation ? 'GPS On' : 'GPS Off',
         active: _s.saveLocation,
@@ -517,39 +535,56 @@ class _CameraToolStripState extends State<CameraToolStrip> {
 class _ToolTile extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String name;
   final bool active;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   const _ToolTile({
     required this.icon,
     required this.label,
+    required this.name,
     required this.active,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: SizedBox(
-        height: 60,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 21, color: active ? Palette.accentMuted : Palette.textMid),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: AppText.caption.copyWith(
-                fontSize: 9,
-                letterSpacing: 0.2,
-                color: active ? Palette.textHi : Palette.textMid,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+    return Tooltip(
+      message: name,
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: '$name, $label',
+        button: true,
+        enabled: onTap != null,
+        child: Pressable(
+          onTap: onTap,
+          child: ExcludeSemantics(
+            child: SizedBox(
+              height: 60,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 21,
+                    color: active ? Palette.accentMuted : Palette.textMid,
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppText.caption.copyWith(
+                      fontSize: 9,
+                      letterSpacing: 0.2,
+                      color: active ? Palette.textHi : Palette.textMid,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

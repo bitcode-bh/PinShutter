@@ -159,7 +159,7 @@ class _CustomTemplateEditorState extends State<CustomTemplateEditor> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF26354F), Color(0xFF121A2C), Color(0xFF1C2638)],
+            colors: [Color(0xFF362F3A), Palette.ink, Palette.ink2],
           ),
         ),
         child: Align(

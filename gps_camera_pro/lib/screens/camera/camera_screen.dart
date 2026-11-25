@@ -8,7 +8,9 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -29,6 +31,7 @@ import '../../state/template_controller.dart';
 import '../../widgets/geo_stamp.dart';
 import '../../widgets/mini_map.dart';
 import '../settings/app_settings.dart';
+import 'widgets/camera_control_bar.dart';
 import 'widgets/camera_chrome.dart';
 import 'widgets/camera_layer.dart';
 import 'widgets/camera_tool_strip.dart';
@@ -73,8 +76,11 @@ class _CameraScreenState extends State<CameraScreen>
   int _proPreviewW = 0;
   int _proPreviewH = 0;
 
-  StreamSubscription<GeoData>? _geoSub;
-  GeoData _geo = GeoData.demo();
+  StreamSubscription<GeoData?>? _geoSub;
+  StreamSubscription<Map<String, dynamic>>? _proEventsSub;
+  GeoData? _geo;
+  GeoData? _captureGeo;
+  bool _locationUnavailable = false;
 
   // Live magnetometer compass (GPS heading is only valid while moving).
   // Kept in a ValueNotifier so compass ticks only repaint the stamp widget
@@ -85,8 +91,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   /// Geo snapshot with the live compass heading folded in (used by the stamp,
   /// mini-map pin and capture so the heading/compass update in real time).
-  GeoData get _stampGeo =>
-      _compassHeading.value == null ? _geo : _geo.copyWith(heading: _compassHeading.value);
+  GeoData? get _stampGeo => _geo?.copyWith(heading: _compassHeading.value);
 
   // Computed once when camera limits are known; never recomputed on every build.
   List<double> _zoomLevels = const [1.0];
@@ -144,6 +149,16 @@ class _CameraScreenState extends State<CameraScreen>
   CameraController? _cam;
   List<CameraDescription> _cameras = const [];
   int _camIndex = 0;
+  String? _cameraError;
+  bool _cameraPermissionError = false;
+
+  bool get _cameraReady =>
+      !_pausedByLifecycle &&
+      !_proSwitching &&
+      (_cam?.value.isInitialized == true ||
+          (_proActive && _proTextureId != null));
+
+  bool _discoveringCameras = false;
   bool _initializing = false; // guard against concurrent controller inits
   bool _pausedByLifecycle = false;
 
@@ -176,6 +191,9 @@ class _CameraScreenState extends State<CameraScreen>
   int _mode = 0; // 0 = photo, 1 = video
 
   bool _busy = false;
+  Future<void>? _recordingOperation;
+  Future<void>? _cameraRelease;
+  bool get _recordingBusy => _recording || _recordingOperation != null;
   bool _recording = false;
   Duration _recElapsed = Duration.zero;
   Timer? _recTimer;
@@ -198,7 +216,7 @@ class _CameraScreenState extends State<CameraScreen>
     // Settings changes (grid, map type, formats…) are infrequent and may affect
     // top-level chrome, so rebuild the screen when they change.
     _settings.addListener(_onSettings);
-    _proCam.events.listen((e) {
+    _proEventsSub = _proCam.events.listen((e) {
       if (!mounted) return;
       final event = e['event'] as String?;
       if (event == 'histogram' && _histogramStreaming) {
@@ -220,14 +238,7 @@ class _CameraScreenState extends State<CameraScreen>
       _initCamera();
     }
     _resetIdleTimer();
-    _geoSub = _location.watch().listen(
-      (g) {
-        if (mounted) setState(() => _geo = g);
-      },
-      onError: (_) {
-        if (mounted) setState(() => _geo = GeoData.demo());
-      },
-    );
+    _startLocation();
     _compassSub = FlutterCompass.events?.listen(_onCompass);
     // Restore the last capture so the thumbnail/preview works after a restart.
     CaptureService.instance.loadLast().then((b) {
@@ -320,6 +331,10 @@ class _CameraScreenState extends State<CameraScreen>
   void _sleepCamera() {
     final cam = _cam;
     if (cam == null || !mounted || _pausedByLifecycle) return;
+    if (_recordingBusy || _busy || _countdown > 0) {
+      _resetIdleTimer();
+      return;
+    }
     _cam = null;
     cam.dispose();
     if (mounted) setState(() => _cameraSleeping = true);
@@ -345,6 +360,7 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.removeObserver(this);
     _settings.removeListener(_onSettings);
     _geoSub?.cancel();
+    _proEventsSub?.cancel();
     _compassSub?.cancel();
     _accelSub?.cancel();
     _recTimer?.cancel();
@@ -388,14 +404,48 @@ class _CameraScreenState extends State<CameraScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
-      _pauseCameraForLifecycle();
+      if (!_pausedByLifecycle) {
+        _cameraRelease = _pauseCameraForLifecycle();
+      }
     } else if (state == AppLifecycleState.resumed) {
       _pausedByLifecycle = false;
       unawaited(_resumeCameraAfterLifecycle());
     }
   }
 
+  void _startLocation() {
+    _geoSub?.cancel();
+    setState(() {
+      _geo = null;
+      _locationUnavailable = false;
+    });
+    _geoSub = _location.watch().listen((geo) {
+      if (!mounted) return;
+      setState(() {
+        _geo = geo;
+        _locationUnavailable = geo == null;
+      });
+    });
+  }
+
+  Future<void> _openCameraSettings() async {
+    try {
+      if (await Geolocator.openAppSettings()) return;
+    } catch (_) {}
+    _toast('Open your device settings to allow camera access');
+  }
+
+  void _retryCamera() {
+    if (_useNativePro && _settings.proMode) {
+      unawaited(_enterProBackend());
+    } else {
+      unawaited(_initCamera());
+    }
+  }
+
   Future<void> _resumeCameraAfterLifecycle() async {
+    await _cameraRelease;
+    if (!mounted || _pausedByLifecycle) return;
     if (_cameraSleeping) return;
     // Native (Pro) backend: reopen the Camera2 session it released on pause.
     if (_useNativePro && _settings.proMode) {
@@ -403,7 +453,11 @@ class _CameraScreenState extends State<CameraScreen>
       _resetIdleTimer();
       return;
     }
-    if (_cameras.isEmpty) return;
+    if (_cameras.isEmpty) {
+      await _initCamera();
+      if (mounted && _cameraReady) _resetIdleTimer();
+      return;
+    }
     while (_initializing && mounted && !_pausedByLifecycle) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
@@ -427,18 +481,20 @@ class _CameraScreenState extends State<CameraScreen>
     _cam = null;
     if (mounted) setState(() {});
     if (cam == null) return;
+    await _recordingOperation;
     if (cam.value.isRecordingVideo) {
       try {
-        await cam.stopVideoRecording();
+        await _stopAndSaveVideo(cam);
       } catch (_) {}
-      _recTimer?.cancel();
-      if (mounted) setState(() => _recording = false);
     }
     await cam.dispose();
   }
 
   // ── Camera setup ───────────────────────────────────────────────────────
   Future<void> _initCamera() async {
+    if (!mounted || _pausedByLifecycle || _discoveringCameras) return;
+    _discoveringCameras = true;
+    setState(() => _cameraError = null);
     try {
       // Detect hardware capabilities in parallel with Flutter camera discovery.
       final results = await Future.wait([
@@ -446,21 +502,46 @@ class _CameraScreenState extends State<CameraScreen>
         CameraCapabilityService.instance.detect().then((_) => null),
       ]);
       final cams = results[0] as List<CameraDescription>;
-      if (cams.isEmpty) return;
+      if (!mounted || _pausedByLifecycle) return;
+      if (cams.isEmpty) {
+        _setCameraError();
+        return;
+      }
       _cameras = cams;
       final back = cams.indexWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
       );
       _camIndex = back >= 0 ? back : 0;
       await _setupController(_cameras[_camIndex]);
-    } catch (_) {
-      // No camera (simulator/web) — the painted fallback scene shows instead.
+    } catch (error) {
+      _setCameraError(error);
+    } finally {
+      _discoveringCameras = false;
     }
   }
 
+  void _setCameraError([Object? error]) {
+    if (!mounted || _pausedByLifecycle) return;
+    final code = switch (error) {
+      CameraException() => error.code,
+      PlatformException() => error.code,
+      _ => '',
+    };
+    setState(() {
+      _cameraPermissionError = code.startsWith('CameraAccess') ||
+          code.startsWith('AudioAccess') || code == 'camera_permission';
+      _cameraError = code.startsWith('AudioAccess')
+          ? 'Microphone access is required to start the camera.'
+          : _cameraPermissionError
+              ? 'Allow camera access to take photos.'
+              : 'Camera unavailable';
+    });
+  }
+
   Future<void> _setupController(CameraDescription d) async {
-    if (_initializing || _pausedByLifecycle) return;
+    if (!mounted || _initializing || _pausedByLifecycle) return;
     _initializing = true;
+    setState(() => _cameraError = null);
     _activeResolutionIdx = _settings.captureResolutionIndex;
     final resolution = CameraCapabilityService.instance.resolutionAt(
       _activeResolutionIdx,
@@ -498,7 +579,8 @@ class _CameraScreenState extends State<CameraScreen>
       setState(() => _cam = c);
       // Start histogram stream if the overlay is enabled.
       if (_settings.proMode) unawaited(_startHistogramStream());
-    } catch (_) {
+    } catch (error) {
+      _setCameraError(error);
       await c.dispose();
     } finally {
       _initializing = false;
@@ -711,6 +793,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   /// Toggle between the back and front camera (dual-camera switch).
   Future<void> _flip() async {
+    if (_recordingBusy) return;
     _onUserInteraction();
     // Native (Pro) backend: reopen the Camera2 session on the other facing.
     if (_proActive) {
@@ -981,11 +1064,27 @@ class _CameraScreenState extends State<CameraScreen>
     _showNotification('AE/AF locked');
   }
 
-  void _setProMode(bool enabled) {
+  void _selectCaptureMode(CameraMode mode) {
+    if (mode == _captureMode || _cameraChangesLocked) return;
+    final enablePro = mode == CameraMode.pro;
+    setState(() => _mode = mode == CameraMode.video ? 1 : 0);
+    if (_settings.proMode != enablePro) {
+      _settings.update(() => _settings.proMode = enablePro);
+    }
     _onUserInteraction();
-    _settings.update(() => _settings.proMode = enabled);
-    _showNotification(enabled ? 'Pro mode' : 'Auto mode');
   }
+
+  CameraMode get _captureMode => _mode == 1
+      ? CameraMode.video
+      : (_settings.proMode ? CameraMode.pro : CameraMode.photo);
+
+  bool get _cameraChangesLocked =>
+      _recordingBusy ||
+      _proSwitching ||
+      _discoveringCameras ||
+      _initializing ||
+      _busy ||
+      _countdown > 0;
 
   // Pro-control setters: each commits the new value (which notifies listeners
   // and rebuilds the scale) and surfaces the live value in the notification
@@ -1083,8 +1182,12 @@ class _CameraScreenState extends State<CameraScreen>
   /// apply to the live preview. The `camera` plugin can't, so we hand off the
   /// camera device entirely while Pro mode is active.
   Future<void> _enterProBackend() async {
-    if (_proActive || _proSwitching) return;
-    _proSwitching = true;
+    if (!mounted || _pausedByLifecycle || _proActive || _proSwitching) return;
+    setState(() {
+      _proSwitching = true;
+      _cameraError = null;
+      _cameraSleeping = false;
+    });
     // Start auto so the preview is never stuck dark from a stale manual ISO/
     // shutter; the user dials in manual values deliberately from there.
     _settings.proIso = null;
@@ -1104,8 +1207,11 @@ class _CameraScreenState extends State<CameraScreen>
         _proActive = true;
         await _pushProControls();
         _syncHistogramStream();
+      } else {
+        _setCameraError();
       }
-    } catch (_) {
+    } catch (error) {
+      _setCameraError(error);
     } finally {
       _proSwitching = false;
       if (mounted) setState(() {});
@@ -1114,10 +1220,9 @@ class _CameraScreenState extends State<CameraScreen>
 
   /// Returns to the `camera` plugin backend (Auto mode).
   Future<void> _exitProBackend() async {
-    if (!_proActive) return;
     _proSwitching = true;
     try {
-      await _proCam.close();
+      if (_proActive) await _proCam.close();
     } catch (_) {}
     _proActive = false;
     _proTextureId = null;
@@ -1132,8 +1237,20 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Capture ────────────────────────────────────────────────────────────
   Future<void> _onShutter() async {
+    if (!_cameraReady || _countdown > 0) return;
     _onUserInteraction();
-    if (_mode == 1) return _toggleRecording();
+    if (_mode == 1) {
+      if (_recordingOperation != null) return;
+      final operation = _toggleRecording();
+      setState(() => _recordingOperation = operation);
+      try {
+        await operation;
+      } finally {
+        _recordingOperation = null;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
     if (_busy) return;
     final t = _settings.timerSeconds;
     if (t > 0) {
@@ -1148,21 +1265,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _capturePhoto() async {
-    if (_busy) return;
+    if (!mounted || _busy || !_cameraReady) return;
+    final captureGeo = _settings.stampEnabled ? _stampGeo : null;
+    final stampAtTop = _templates.config.position == StampPosition.top;
+    final geotag = _settings.saveLocation ? _geo : null;
+    final proCapture = _proActive;
     setState(() => _busy = true);
 
-    // If the camera was just woken from sleep and is still initialising, wait
-    // rather than capturing into a blank frame.
-    while (_initializing && mounted && !_pausedByLifecycle) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    if (!mounted || (_cam == null && !_proActive)) {
-      if (mounted) setState(() => _busy = false);
-      return;
-    }
-
     final cam = _cam;
-    String? rawShotPath; // native JPEG path (full-res); null in plugin-path auto mode
+    String? rawShotPath;
 
     // 1. Hardware capture — ~200–500 ms.
     // Pause the histogram stream before taking a picture; CameraX uses separate
@@ -1185,15 +1296,41 @@ class _CameraScreenState extends State<CameraScreen>
         final shot = await cam.takePicture();
         rawShotPath = shot.path;
       }
-    } catch (_) {
-      // On error fall through with rawShotPath = null; the rasterized composite
-      // is still saved so the stamp is preserved.
+    } catch (_) {}
+    if (!mounted) return;
+    if (rawShotPath == null) {
+      setState(() => _busy = false);
+      _toast('Capture failed. Try again.');
+      if (wasStreaming && _settings.histogram) {
+        unawaited(_startHistogramStream());
+      }
+      return;
     }
-    _frozenBg = null;
+    final stampRatio = CameraCapabilityService.instance
+        .resolutionAt(_settings.captureResolutionIndex)
+        .stampPixelRatio;
+    final image = ResizeImage.resizeIfNeeded(
+      (MediaQuery.sizeOf(context).width * stampRatio).ceil(),
+      null,
+      FileImage(File(rawShotPath)),
+    );
+    var decoded = true;
+    await precacheImage(image, context, onError: (_, _) => decoded = false);
+    if (!mounted) return;
+    if (!decoded) {
+      setState(() => _busy = false);
+      _toast('Could not read the captured photo');
+      if (wasStreaming && _settings.histogram) {
+        unawaited(_startHistogramStream());
+      }
+      return;
+    }
 
     // 2. Show the shutter flash.
     if (!mounted) return;
     setState(() {
+      _frozenBg = image;
+      _captureGeo = captureGeo;
       _showFreeze = true;
       _flash2 = true;
     });
@@ -1202,12 +1339,9 @@ class _CameraScreenState extends State<CameraScreen>
 
     // 3. Start GPU rasterisation of the composite (stamp over live frame).
     //    In Pro mode we also grab just the stamp boundary for native compositing.
-    final stampRatio = CameraCapabilityService.instance
-        .resolutionAt(_settings.captureResolutionIndex)
-        .stampPixelRatio;
     final boundary =
         _freezeKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    final stampBoundary = _proActive
+    final stampBoundary = proCapture && captureGeo != null
         ? _stampRasterKey.currentContext?.findRenderObject()
             as RenderRepaintBoundary?
         : null;
@@ -1221,32 +1355,48 @@ class _CameraScreenState extends State<CameraScreen>
     if (!mounted) return;
     setState(() {
       _showFreeze = false;
+      _captureGeo = null;
       _busy = false;
       _frozenBg = null;
     });
 
     // 5. Finish compositing and saving in the background.
     Uint8List? bytes;
-    if (_proActive && rawShotPath != null && stampBoundary != null) {
-      // Full-res path: composite stamp over the native sensor-resolution JPEG.
+    if (stampBoundary != null) {
       bytes = await CaptureService.instance.compositeNativeWithStamp(
         rawShotPath,
         stampBoundary,
+        stampAtTop: stampAtTop,
       );
     }
     // Fallback to preview-res rasterized composite (plugin mode, or native failed).
     bytes ??= await renderFuture;
 
     if (bytes != null) {
-      _lastShot = bytes;
-      CaptureService.instance.cacheLast(bytes);
-      _templates.bumpPhotoNumber();
-      final galleryRef = await CaptureService.instance.saveImageToGallery(bytes);
-      await CaptureService.instance.saveLocalCapture(bytes, galleryRef: galleryRef);
-      if (_settings.saveOriginal && rawShotPath != null) {
-        await CaptureService.instance.saveRawToGallery(rawShotPath);
+      final captures = CaptureService.instance;
+      if (geotag != null) {
+        final tagged = await captures.setPhotoLocation(
+          bytes,
+          latitude: geotag.lat,
+          longitude: geotag.lon,
+        );
+        if (tagged == null) _toast('Photo saved without a GPS geotag');
+        bytes = tagged ?? bytes;
       }
-      if (mounted) setState(() {}); // refresh thumbnail
+      await captures.cacheLast(bytes);
+      _templates.bumpPhotoNumber();
+      final galleryRef = await captures.saveImageToGallery(bytes);
+      await captures.saveLocalCapture(bytes, galleryRef: galleryRef);
+      if (mounted) setState(() => _lastShot = bytes);
+      if (galleryRef == null) _toast('Photo available in the app gallery only');
+      if (_settings.saveOriginal) {
+        final saved = await captures.saveRawToGallery(
+          rawShotPath,
+          latitude: geotag?.lat,
+          longitude: geotag?.lon,
+        );
+        if (!saved) _toast('Could not save the original photo');
+      }
     } else if (mounted) {
       _toast('Capture failed');
     }
@@ -1267,6 +1417,7 @@ class _CameraScreenState extends State<CameraScreen>
         // Stop image stream — can't stream while recording on Android CameraX.
         await _stopHistogramStream();
         await cam.startVideoRecording();
+        if (!mounted || _pausedByLifecycle) return;
         _recElapsed = Duration.zero;
         _recTimer = Timer.periodic(const Duration(seconds: 1), (_) {
           if (mounted) {
@@ -1275,12 +1426,11 @@ class _CameraScreenState extends State<CameraScreen>
         });
         setState(() => _recording = true);
       } else {
-        _recTimer?.cancel();
-        final file = await cam.stopVideoRecording();
-        setState(() => _recording = false);
-        await CaptureService.instance.saveVideoToGallery(file.path);
+        await _stopAndSaveVideo(cam);
         // Resume histogram stream if enabled.
-        if (_settings.histogram && mounted) unawaited(_startHistogramStream());
+        if (_settings.histogram && mounted && !_pausedByLifecycle) {
+          unawaited(_startHistogramStream());
+        }
       }
     } catch (_) {
       _toast('Recording error');
@@ -1290,6 +1440,18 @@ class _CameraScreenState extends State<CameraScreen>
           _busy = false;
         });
       }
+    }
+  }
+
+  Future<void> _stopAndSaveVideo(CameraController cam) async {
+    _recTimer?.cancel();
+    try {
+      final file = await cam.stopVideoRecording();
+      if (!await CaptureService.instance.saveVideoToGallery(file.path)) {
+        _toast('Could not save video to the gallery');
+      }
+    } finally {
+      if (mounted) setState(() => _recording = false);
     }
   }
 
@@ -1329,7 +1491,12 @@ class _CameraScreenState extends State<CameraScreen>
     final bottomPad = mq.padding.bottom;
     final topY = topPad > 0 ? topPad + 8 : 16.0;
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_toolsOpen && !_settingsOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _dismissMenus();
+      },
+      child: Scaffold(
       backgroundColor: Palette.ink,
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -1357,6 +1524,14 @@ class _CameraScreenState extends State<CameraScreen>
           final viewfinderTop = (areaH - boxH) / 2;
           final controlBottom = bottomPad + Insets.sm;
           const stampInset = 14.0;
+          final dockTop = controlBottom + CameraControlBar.height;
+          final viewfinderBottom = areaH - viewfinderTop - boxH;
+          final showZoom = !_settings.proMode && !_toolsOpen && !_settingsOpen;
+          final liveStampInset = math.max(
+            stampInset,
+            dockTop - viewfinderBottom,
+          );
+          final showGuides = !_showFreeze;
 
           return Stack(
             clipBehavior: Clip.none,
@@ -1378,24 +1553,31 @@ class _CameraScreenState extends State<CameraScreen>
                   proSensorOrientation: _proCam.sensorOrientation,
                   proFront: _proFront,
                   frozen: _showFreeze ? _frozenBg : null,
-                  grid: _settings.gridLines,
+                  grid: showGuides && _settings.gridLines,
                   gridType: _settings.gridType,
                   mirror: _settings.mirror,
                   focus: _focus,
                   levelRoll: _settings.levelIndicator ? _roll : null,
-                  histogram: _settings.proMode && _settings.histogram,
+                  histogram: showGuides && _settings.proMode && _settings.histogram,
                   histogramData: _histogramData,
-                  focusPeaking: _settings.focusPeaking &&
+                  focusPeaking: showGuides && _settings.focusPeaking &&
                       CameraCapabilityService.instance.manualFocus,
-                  zebraStripes: _settings.zebraStripes,
+                  zebraStripes: showGuides && _settings.zebraStripes,
                   // Live preview lifts the stamp above the control bar, but a
                   // capture always pins it to the bottom of the final image.
-                  stampInset: _showFreeze ? 14.0 : stampInset,
                   stamp: ListenableBuilder(
                     listenable: Listenable.merge([_templates, _settings, _compassHeading]),
                     builder: (context, _) {
-                      return Visibility(
-                        visible: _settings.stampEnabled,
+                      final geo = _showFreeze
+                          ? _captureGeo
+                          : (_settings.stampEnabled ? _stampGeo : null);
+                      if (geo == null) return const SizedBox.shrink();
+                      final atTop = _templates.config.position == StampPosition.top;
+                      return Positioned(
+                        left: 10,
+                        right: 10,
+                        top: atTop ? stampInset : null,
+                        bottom: atTop ? null : (_showFreeze ? stampInset : liveStampInset),
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onPanStart: (details) {
@@ -1418,15 +1600,16 @@ class _CameraScreenState extends State<CameraScreen>
                           child: RepaintBoundary(
                             key: _stampRasterKey,
                             child: GeoStamp(
-                              geo: _stampGeo,
+                              geo: geo,
+                              forCapture: _showFreeze,
                               config: _templates.config,
                               settings: _settings,
-                              onMapDoubleTap: () {
+                              onMapTap: () {
                                 showMapZoomPopup(
                                   context,
-                                  lat: _stampGeo.lat,
-                                  lon: _stampGeo.lon,
-                                  heading: _stampGeo.heading,
+                                  lat: geo.lat,
+                                  lon: geo.lon,
+                                  heading: geo.heading,
                                   kind: _settings.mapKind,
                                   initialZoom: _settings.mapZoom,
                                 );
@@ -1447,6 +1630,68 @@ class _CameraScreenState extends State<CameraScreen>
                   },
                 ),
               ),
+
+              if (_cameraReady && _settings.stampEnabled && _geo == null)
+                Positioned(
+                  left: Insets.md,
+                  right: Insets.md,
+                  bottom: dockTop + (_settings.proMode ? 76 : 58),
+                  child: Center(
+                    child: FrostedChip(
+                      child: _locationUnavailable
+                          ? TextButton(
+                              onPressed: _startLocation,
+                              child: const Text('Location unavailable · Retry'),
+                            )
+                          : Semantics(
+                              liveRegion: true,
+                              child: const Text('Finding location…'),
+                            ),
+                    ),
+                  ),
+                ),
+
+              if (_cameraError != null)
+                Positioned(
+                  top: viewfinderTop,
+                  left: 0,
+                  right: 0,
+                  height: boxH,
+                  child: ColoredBox(
+                    color: Palette.ink,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(Insets.lg),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                _cameraError!,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              children: [
+                                TextButton(
+                                  onPressed: _retryCamera,
+                                  child: const Text('Retry'),
+                                ),
+                                if (_cameraPermissionError)
+                                  TextButton(
+                                    onPressed: _openCameraSettings,
+                                    child: const Text('Open Settings'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
 
               // Camera sleep overlay: covers only the viewfinder background.
               // Controls remain visible and interactive above it.
@@ -1508,6 +1753,12 @@ class _CameraScreenState extends State<CameraScreen>
                       exposure: _exposure,
                       canExpose: _maxExp > _minExp,
                       onExposure: _cycleExposure,
+                      onTogglePro: _cameraChangesLocked
+                          ? null
+                          : () => _selectCaptureMode(_settings.proMode
+                                ? CameraMode.photo
+                                : CameraMode.pro),
+                      recording: _recordingBusy,
                     ),
                     // Notification banner — floats between the two strips.
                     Expanded(
@@ -1526,7 +1777,7 @@ class _CameraScreenState extends State<CameraScreen>
                               ? const SizedBox.shrink()
                               : FrostedChip(
                                   key: ValueKey<String>(_notificationMsg!),
-                                  fill: const Color(0xEB070B14),
+                                  fill: Palette.glassFillStrong,
                                   stroke: Palette.glassStrokeSoft,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -1568,7 +1819,7 @@ class _CameraScreenState extends State<CameraScreen>
                 Positioned(
                   left: Insets.md,
                   right: Insets.md,
-                  bottom: controlBottom + 88 + Insets.sm,
+                  bottom: dockTop + Insets.sm,
                   child: ListenableBuilder(
                     listenable: _settings,
                     builder: (context, _) => _ProQuickPanel(
@@ -1585,7 +1836,7 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                   ),
                 ),
-              ] else if (!_toolsOpen && !_settingsOpen) ...[
+              ] else if (showZoom) ...[
                 // Non-Pro Mode: Zoom / Exposure toggle (right edge)
                 // Hidden while any menu is open to avoid clutter.
                 Positioned(
@@ -1600,7 +1851,8 @@ class _CameraScreenState extends State<CameraScreen>
                         // Mode Switch Button
                         GlassIconButton(
                           icon: _getModeSwitchIcon(),
-                          size: 38,
+                          size: 44,
+                          label: _isZoomMode ? 'Switch to exposure' : 'Switch to zoom',
                           active: true,
                           hasBorder: false,
                           onTap: () {
@@ -1682,24 +1934,32 @@ class _CameraScreenState extends State<CameraScreen>
                   ),
                 ),
 
-              // Bottom control bar (thumb · auto/pro · shutter · mode · flip).
+              // Separate capture controls from the swipeable navigation row.
               Positioned(
-                left: Insets.md,
-                right: Insets.md,
+                left: Insets.xs,
+                right: Insets.xs,
                 bottom: controlBottom,
-                child: _ControlBar(
-                  mode: _mode,
-                  busy: _busy,
+                child: CameraControlBar(
+                  mode: _captureMode,
+                  busy: _busy || _recordingOperation != null,
                   lastShot: _lastShot,
-                  proMode: _settings.proMode,
-                  onProMode: () => _setProMode(!_settings.proMode),
-                  onMode: (i) {
-                    _onUserInteraction();
-                    setState(() => _mode = i);
-                  },
-                  onShutter: _onShutter,
+                  onMode: _selectCaptureMode,
+                  onShutter: _cameraReady && _countdown == 0
+                      ? _onShutter
+                      : null,
+                  recording: _recording,
+                  lockCameraChanges: _cameraChangesLocked,
                   onFlip: _flip,
                   onGallery: _openGallery,
+                  toolsOpen: _toolsOpen,
+                  onTools: () {
+                    final open = !_toolsOpen;
+                    setState(() {
+                      _toolsOpen = open;
+                      _settingsOpen = false;
+                    });
+                    open ? _startMenuTimer() : _cancelMenuTimer();
+                  },
                 ),
               ),
 
@@ -1719,6 +1979,10 @@ class _CameraScreenState extends State<CameraScreen>
                   child: _PreviewOverlay(
                     latestBytes: _lastShot!,
                     onClose: () => setState(() => _showPreview = false),
+                    onDeleted: () async {
+                      final bytes = await CaptureService.instance.loadLast();
+                      if (mounted) setState(() => _lastShot = bytes);
+                    },
                     onOpenGallery: () => CaptureService.instance.openGallery(),
                   ),
                 ),
@@ -1726,6 +1990,7 @@ class _CameraScreenState extends State<CameraScreen>
           );
         },
         ),
+      ),
       ),
     );
   }
@@ -1738,10 +2003,12 @@ class _CameraScreenState extends State<CameraScreen>
 class _PreviewOverlay extends StatefulWidget {
   final Uint8List latestBytes;
   final VoidCallback onClose;
+  final Future<void> Function() onDeleted;
   final VoidCallback onOpenGallery;
   const _PreviewOverlay({
     required this.latestBytes,
     required this.onClose,
+    required this.onDeleted,
     required this.onOpenGallery,
   });
 
@@ -1755,6 +2022,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
   late final PageController _pageController;
   int _currentPage = 0;
   bool _zoomed = false;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -1799,7 +2067,8 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
   }
 
   Future<void> _delete() async {
-    if (_files.isEmpty) return;
+    if (_files.isEmpty || _deleting) return;
+    final file = _files[_currentPage];
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1809,7 +2078,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
           style: AppText.bodyHi.copyWith(color: Palette.textHi),
         ),
         content: Text(
-          'Deletes the photo from your gallery and the in-app preview.',
+          'Removes this photo from the app and deletes its linked device gallery copy, if present.',
           style: AppText.caption.copyWith(color: Palette.textMid),
         ),
         actions: [
@@ -1825,14 +2094,38 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await CaptureService.instance.deleteCapture(_files[_currentPage]);
-    setState(() {
-      _files.removeAt(_currentPage);
-      if (_currentPage >= _files.length && _currentPage > 0) {
-        _currentPage = _files.length - 1;
+    final onDeleted = widget.onDeleted;
+    setState(() => _deleting = true);
+    try {
+      await CaptureService.instance.deleteCapture(file);
+      if (mounted) {
+        setState(() {
+          _files.remove(file);
+          if (_currentPage >= _files.length && _currentPage > 0) {
+            _currentPage = _files.length - 1;
+          }
+        });
+        if (_files.isEmpty) {
+          widget.onClose();
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pageController.hasClients) {
+              _pageController.jumpToPage(_currentPage);
+            }
+          });
+        }
       }
-    });
-    if (_files.isEmpty && mounted) widget.onClose();
+      await onDeleted();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not finish deleting the photo. Try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   @override
@@ -1874,7 +2167,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
                     )
                   : PageView.builder(
                       controller: _pageController,
-                      physics: _zoomed
+                      physics: _zoomed || _deleting
                           ? const NeverScrollableScrollPhysics()
                           : const PageScrollPhysics(
                               parent: BouncingScrollPhysics(),
@@ -1910,6 +2203,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
                 children: [
                   GlassIconButton(
                     icon: Icons.arrow_back_ios_new,
+                    label: 'Close photo viewer',
                     onTap: widget.onClose,
                     blur: true,
                   ),
@@ -1917,6 +2211,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
                   if (!_loading && _files.isNotEmpty)
                     GlassIconButton(
                       icon: Icons.share_outlined,
+                      label: 'Share photo',
                       onTap: _share,
                       blur: true,
                     ),
@@ -1932,6 +2227,7 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
                 children: [
                   GlassIconButton(
                     icon: Icons.photo_library_outlined,
+                    label: 'Open device gallery',
                     onTap: widget.onOpenGallery,
                     blur: true,
                   ),
@@ -1939,7 +2235,8 @@ class _PreviewOverlayState extends State<_PreviewOverlay> {
                   if (!_loading && _files.isNotEmpty)
                     GlassIconButton(
                       icon: Icons.delete_outline,
-                      onTap: _delete,
+                      label: 'Delete photo',
+                      onTap: _deleting ? null : _delete,
                       blur: true,
                     ),
                 ],
@@ -2148,7 +2445,6 @@ class _Viewfinder extends StatelessWidget {
   final List<int>? histogramData;
   final bool focusPeaking;
   final bool zebraStripes;
-  final double stampInset;
   final Widget stamp;
   final GestureScaleStartCallback onScaleStart;
   final GestureScaleUpdateCallback onScaleUpdate;
@@ -2176,7 +2472,6 @@ class _Viewfinder extends StatelessWidget {
     this.histogramData,
     required this.focusPeaking,
     required this.zebraStripes,
-    required this.stampInset,
     required this.stamp,
     required this.onScaleStart,
     required this.onScaleUpdate,
@@ -2242,12 +2537,7 @@ class _Viewfinder extends StatelessWidget {
                           child: _HistogramOverlay(data: histogramData),
                         ),
                       ),
-                    Positioned(
-                      left: 10,
-                      right: 10,
-                      bottom: stampInset,
-                      child: stamp,
-                    ),
+                    stamp,
                   ],
                 ),
               ),
@@ -2263,94 +2553,6 @@ class _Viewfinder extends StatelessWidget {
     );
   }
 }
-
-class _ControlBar extends StatelessWidget {
-  final int mode;
-  final bool busy;
-  final Uint8List? lastShot;
-  final bool proMode;
-  final VoidCallback onProMode;
-  final ValueChanged<int> onMode;
-  final VoidCallback onShutter;
-  final VoidCallback onFlip;
-  final VoidCallback onGallery;
-
-  const _ControlBar({
-    required this.mode,
-    required this.busy,
-    required this.lastShot,
-    required this.proMode,
-    required this.onProMode,
-    required this.onMode,
-    required this.onShutter,
-    required this.onFlip,
-    required this.onGallery,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassSurface(
-      radius: Corners.xl,
-      blur: Blurs.sheet,
-      fill: const Color(0xC2070B14),
-      stroke: Palette.glassStrokeSoft,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: SizedBox(
-        height: 56,
-        child: Row(
-          children: [
-            Expanded(
-              child: Center(
-                child: GalleryThumb(
-                  thumb: lastShot,
-                  onTap: onGallery,
-                  hasBorder: false,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: _ProModeButton(active: proMode, onTap: onProMode),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: ShutterButton(
-                  onTap: onShutter,
-                  busy: busy,
-                  video: mode == 1,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: GlassIconButton(
-                  icon: mode == 0 ? Icons.photo_camera : Icons.videocam,
-                  active: mode == 1,
-                  size: 46,
-                  hasBorder: false,
-                  onTap: () => onMode(mode == 0 ? 1 : 0),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: GlassIconButton(
-                  icon: Icons.cameraswitch_outlined,
-                  size: 46,
-                  hasBorder: false,
-                  onTap: onFlip,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
 
 class _ProQuickPanel extends StatelessWidget {
   final CameraCapabilityService caps;
@@ -2407,20 +2609,23 @@ class _ProQuickPanel extends StatelessWidget {
         ),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
-    // Flat row of tiles, centered. Wrap falls back gracefully if chips overflow.
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 8,
-      runSpacing: 6,
-      children: [
-        for (final chip in chips)
-          _ProChip(
-            label: chip.label,
-            value: chip.value,
-            active: chip.active,
-            onTap: chip.onTap,
-          ),
-      ],
+    return GlassSurface.menu(
+      radius: Corners.lg,
+      padding: const EdgeInsets.all(Insets.xxs),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          for (final chip in chips)
+            _ProChip(
+              label: chip.label,
+              value: chip.value,
+              active: chip.active,
+              onTap: chip.onTap,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -2443,7 +2648,7 @@ class _ProChip extends StatelessWidget {
     // Flat, container-less tile that mirrors the Camera Settings _ToolTile:
     // the active selection is conveyed purely by colour + weight (accent label
     // over a bright value), never by a fill or border. Soft shadows keep it
-    // legible over the live camera feed without an outer surface.
+    // legible over the live camera feed.
     const shadows = [Shadow(color: Colors.black54, blurRadius: 4)];
     return Pressable(
       onTap: onTap,
@@ -2727,14 +2932,14 @@ class _FocusReticleState extends State<_FocusReticle>
               width: 76,
               height: 76,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Palette.accentMuted, width: 1.6),
                 boxShadow: [
                   BoxShadow(
                     color: Palette.accentMuted.withValues(alpha: 0.35),
                     blurRadius: 10,
                   ),
                 ],
+                shape: BoxShape.circle,
+                border: Border.all(color: Palette.accentMuted, width: 1.6),
               ),
               child: const Center(
                 child: Icon(
@@ -2777,49 +2982,6 @@ class _RecPill extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ── Pro mode button ───────────────────────────────────────────────────────────
-
-/// Tappable button that shows the custom camera+aperture icon.
-/// Active state gets the brand gradient pill; inactive is plain.
-class _ProModeButton extends StatelessWidget {
-  final bool active;
-  final VoidCallback? onTap;
-  const _ProModeButton({required this.active, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 46.0;
-    final icon = SizedBox(
-      width: size,
-      height: size,
-      child: Icon(
-        active ? Icons.tune_rounded : Icons.auto_awesome,
-        size: 22,
-        color: Palette.textHi,
-      ),
-    );
-
-    Widget body;
-    if (active) {
-      body = DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: Palette.selectionGradient,
-          border: Border.all(color: Palette.selectionStroke, width: 1),
-        ),
-        child: icon,
-      );
-    } else {
-      body = icon;
-    }
-
-    return Pressable(
-      onTap: onTap,
-      child: body,
     );
   }
 }

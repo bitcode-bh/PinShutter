@@ -36,6 +36,22 @@ class CaptureService {
     }
   }
 
+  Future<Uint8List?> setPhotoLocation(
+    Uint8List bytes, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('setPhotoLocation', {
+        'bytes': bytes,
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Save JPEG [bytes] to the device gallery via Android MediaStore.
   /// Returns the content:// URI (API 29+) or file path (older) so the caller
   /// can track the gallery entry for later deletion. Returns null on failure.
@@ -55,12 +71,13 @@ class CaptureService {
 
   /// Composites a stamp [RenderRepaintBoundary] over a native full-res JPEG at
   /// [nativePath]. The stamp is rasterized at screen resolution, sent to Android
-  /// together with the JPEG, scaled to full width, and drawn at the bottom.
+  /// together with the JPEG and drawn at the configured edge.
   /// Returns the composited JPEG bytes, or null on failure.
   Future<Uint8List?> compositeNativeWithStamp(
     String nativePath,
     RenderRepaintBoundary stampBoundary, {
     int quality = 92,
+    required bool stampAtTop,
   }) async {
     try {
       final nativeJpeg = await File(nativePath).readAsBytes();
@@ -72,6 +89,7 @@ class CaptureService {
       return await _channel.invokeMethod<Uint8List>('compositeNativeJpeg', {
         'jpeg': nativeJpeg,
         'stampPng': stampPng.buffer.asUint8List(),
+        'stampAtTop': stampAtTop,
         'quality': quality,
       });
     } catch (_) {
@@ -81,16 +99,28 @@ class CaptureService {
 
   /// Save the un-stamped original camera JPEG to the gallery (used when
   /// "Save Original" is enabled in settings).
-  Future<void> saveRawToGallery(String path) async {
+  Future<bool> saveRawToGallery(
+    String path, {
+    double? latitude,
+    double? longitude,
+  }) async {
     try {
-      final bytes = await File(path).readAsBytes();
+      final bytes = await setPhotoLocation(
+        await File(path).readAsBytes(),
+        latitude: latitude,
+        longitude: longitude,
+      );
+      if (bytes == null) return false;
       final name = 'GPS_original_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await _channel.invokeMethod<void>('saveImage', {
+      final ref = await _channel.invokeMethod<String>('saveImage', {
         'bytes': bytes,
         'name': name,
         'album': 'GPS Camera',
       });
-    } catch (_) {}
+      return ref != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Save a recorded video file to the device gallery.
@@ -125,6 +155,8 @@ class CaptureService {
         final f = File('${dir.path}/$name');
         if (f.existsSync()) return await f.readAsBytes();
       }
+      final captures = await getLocalCaptures();
+      if (captures.isNotEmpty) return await captures.first.readAsBytes();
     } catch (_) {}
     return null;
   }
@@ -146,22 +178,32 @@ class CaptureService {
     } catch (_) {}
   }
 
-  /// Delete a local capture file AND its corresponding gallery entry.
-  /// The gallery ref is read from the companion .ref file written at capture time.
+  /// Keep the local copy and its reference if the gallery deletion fails,
+  /// so the user can retry without losing access to the photo.
   Future<void> deleteCapture(File localFile) async {
-    try {
-      final refPath =
-          localFile.path.replaceFirst(RegExp(r'\.[^.]+$'), '.ref');
-      final refFile = File(refPath);
-      if (refFile.existsSync()) {
-        final ref = await refFile.readAsString();
-        try {
-          await _channel.invokeMethod<void>('deleteImage', {'ref': ref});
-        } catch (_) {}
-        await refFile.delete().catchError((_) => refFile);
+    final refFile = File(
+      localFile.path.replaceFirst(RegExp(r'\.[^.]+$'), '.ref'),
+    );
+    final hasGalleryCopy = await refFile.exists();
+    if (hasGalleryCopy) {
+      final ref = await refFile.readAsString();
+      await _channel.invokeMethod<void>('deleteImage', {'ref': ref});
+    }
+
+    final dir = await getApplicationDocumentsDirectory();
+    for (final name in ['last_capture.jpg', 'last_capture.png']) {
+      final cached = File('${dir.path}/$name');
+      if (await cached.exists()) await cached.delete();
+    }
+
+    await localFile.delete();
+    if (hasGalleryCopy) {
+      try {
+        await refFile.delete();
+      } on FileSystemException {
+        // The photo is already gone. The sidecar is ignored by the viewer.
       }
-      await localFile.delete().catchError((_) => localFile);
-    } catch (_) {}
+    }
   }
 
   /// All locally cached captures, newest first.

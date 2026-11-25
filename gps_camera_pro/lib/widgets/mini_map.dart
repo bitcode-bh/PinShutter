@@ -9,7 +9,6 @@ import '../core/design/palette.dart';
 import '../core/design/text_styles.dart';
 import '../core/design/tokens.dart';
 import '../core/glass.dart';
-import '../core/widgets/pressable.dart';
 import '../models/map_kind.dart';
 import '../state/settings_controller.dart';
 
@@ -189,8 +188,8 @@ class _LiveDot extends StatelessWidget {
       height: 7,
       decoration: BoxDecoration(
         color: color,
-        shape: BoxShape.circle,
         boxShadow: [BoxShadow(color: color.withValues(alpha: 0.9), blurRadius: 7)],
+        shape: BoxShape.circle,
       ),
     );
   }
@@ -511,16 +510,11 @@ class _MapZoomPopupState extends State<_MapZoomPopup> {
                       Positioned(
                         right: 10,
                         top: 10,
-                        child: Pressable(
+                        child: GlassIconButton(
+                          icon: Icons.close,
+                          label: 'Close map',
+                          size: 48,
                           onTap: () => Navigator.pop(context),
-                          child: GlassSurface(
-                            radius: Corners.pill,
-                            blur: Blurs.chip,
-                            fill: const Color(0x99070B14),
-                            stroke: Palette.glassStroke,
-                            padding: const EdgeInsets.all(6),
-                            child: const Icon(Icons.close, size: 16, color: Palette.textHi),
-                          ),
                         ),
                       ),
                       // Bottom-Left Reset Instruction Hint
@@ -553,9 +547,9 @@ class _MapZoomPopupState extends State<_MapZoomPopup> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _ZoomButton(icon: Icons.add, onTap: _zoomIn),
+                            GlassIconButton(icon: Icons.add, label: 'Zoom map in', size: 48, onTap: _zoomIn),
                             const SizedBox(height: 8),
-                            _ZoomButton(icon: Icons.remove, onTap: _zoomOut),
+                            GlassIconButton(icon: Icons.remove, label: 'Zoom map out', size: 48, onTap: _zoomOut),
                           ],
                         ),
                       ),
@@ -566,27 +560,6 @@ class _MapZoomPopupState extends State<_MapZoomPopup> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ZoomButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _ZoomButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: GlassSurface(
-        radius: Corners.sm,
-        blur: Blurs.chip,
-        fill: const Color(0x99070B14),
-        stroke: Palette.glassStroke,
-        padding: const EdgeInsets.all(8),
-        child: Icon(icon, size: 18, color: Palette.textHi),
       ),
     );
   }

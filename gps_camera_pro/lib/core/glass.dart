@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'design/palette.dart';
 import 'design/tokens.dart';
 import 'widgets/pressable.dart';
+import 'widgets/stash_glass.dart';
 
 /// A frosted-glass surface: real backdrop blur + dark translucent fill + a top
 /// specular sheen + a hairline stroke. This is the *premium* surface — it costs
@@ -20,6 +21,8 @@ class GlassSurface extends StatelessWidget {
   final Color stroke;
   final Gradient? borderGradient;
   final List<BoxShadow>? shadow;
+  final bool refract;
+  final bool _menu;
 
   const GlassSurface({
     super.key,
@@ -31,34 +34,52 @@ class GlassSurface extends StatelessWidget {
     this.stroke = Palette.glassStroke,
     this.borderGradient,
     this.shadow,
-  });
+    this.refract = true,
+  }) : _menu = false;
+
+  const GlassSurface.menu({
+    super.key,
+    required this.child,
+    this.radius = 44,
+    this.padding = EdgeInsets.zero,
+  }) : _menu = true,
+       refract = true,
+       blur = Blurs.chip,
+       fill = const Color(0xAD2C2C2C),
+       stroke = const Color(0x42FFFFFF),
+       borderGradient = null,
+       shadow = null;
 
   @override
   Widget build(BuildContext context) {
     final br = BorderRadius.circular(radius);
+    final content = Padding(padding: padding, child: child);
     Widget surface = ClipRRect(
       borderRadius: br,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: br,
-            // Dark fill for legibility + a soft diagonal sheen for the frost.
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color.alphaBlend(Palette.sheen, fill),
-                fill,
-              ],
+      child: refract && StashGlass.supported
+          ? StashGlass(
+              radius: radius,
+              tint: fill,
+              menu: _menu,
+              child: content,
+            )
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color.alphaBlend(Palette.sheen, fill), fill],
+                  ),
+                  borderRadius: br,
+                  border: borderGradient == null
+                      ? Border.all(color: stroke)
+                      : null,
+                ),
+                child: content,
+              ),
             ),
-            border: borderGradient == null
-                ? Border.all(color: stroke, width: 1)
-                : null,
-          ),
-          child: Padding(padding: padding, child: child),
-        ),
-      ),
     );
 
     if (borderGradient != null) {
@@ -66,7 +87,10 @@ class GlassSurface extends StatelessWidget {
     }
     if (shadow != null) {
       surface = DecoratedBox(
-        decoration: BoxDecoration(borderRadius: br, boxShadow: shadow),
+        decoration: BoxDecoration(
+          boxShadow: shadow,
+          borderRadius: br,
+        ),
         child: surface,
       );
     }
@@ -100,12 +124,12 @@ class FrostedChip extends StatelessWidget {
     final br = BorderRadius.circular(radius);
     final box = DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: br,
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [Color.alphaBlend(Palette.sheen, fill), fill],
         ),
+        borderRadius: br,
         border: Border.all(color: stroke, width: 1),
       ),
       child: Padding(padding: padding, child: child),
@@ -119,6 +143,7 @@ class FrostedChip extends StatelessWidget {
 /// fills with the brand gradient to signal the toggled-on state.
 class GlassIconButton extends StatelessWidget {
   final IconData icon;
+  final String label;
   final VoidCallback? onTap;
   final double size;
   final bool active;
@@ -130,6 +155,7 @@ class GlassIconButton extends StatelessWidget {
   const GlassIconButton({
     super.key,
     required this.icon,
+    required this.label,
     this.onTap,
     this.size = 44,
     this.active = false,
@@ -151,7 +177,7 @@ class GlassIconButton extends StatelessWidget {
           Icon(
             icon,
             size: size * 0.44,
-            color: Palette.textHi,
+            color: active ? Palette.accentMuted : Palette.textHi,
           ),
           if (badge != null)
             Positioned(
@@ -171,12 +197,16 @@ class GlassIconButton extends StatelessWidget {
     );
 
     Widget body;
-    if (active) {
+    if (StashGlass.supported) {
+      body = GlassSurface(
+        radius: size / 2,
+        fill: active ? Palette.selectionFill : Palette.glassFill,
+        child: inner,
+      );
+    } else if (active) {
       body = DecoratedBox(
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
           gradient: Palette.selectionGradient,
-          border: Border.all(color: Palette.selectionStroke, width: 1),
           boxShadow: const [
             BoxShadow(
               color: Palette.selectionGlow,
@@ -184,6 +214,8 @@ class GlassIconButton extends StatelessWidget {
               spreadRadius: -2,
             ),
           ],
+          shape: BoxShape.circle,
+          border: Border.all(color: Palette.selectionStroke, width: 1),
         ),
         child: inner,
       );
@@ -197,7 +229,6 @@ class GlassIconButton extends StatelessWidget {
     } else {
       body = DecoratedBox(
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
           color: hasBorder ? null : Colors.white.withValues(alpha: 0.12),
           gradient: hasBorder
               ? const LinearGradient(
@@ -206,6 +237,7 @@ class GlassIconButton extends StatelessWidget {
                   colors: [Color(0x70121A2C), Palette.glassFillStrong],
                 )
               : null,
+          shape: BoxShape.circle,
           border: Border.all(
             color: hasBorder ? Palette.glassStroke : Colors.white.withValues(alpha: 0.15),
             width: 1,
@@ -215,9 +247,18 @@ class GlassIconButton extends StatelessWidget {
       );
     }
 
-    return Pressable(
-      onTap: onTap,
-      child: ClipRRect(borderRadius: br, child: body),
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: label,
+        button: true,
+        enabled: onTap != null,
+        child: Pressable(
+          onTap: onTap,
+          child: ClipRRect(borderRadius: br, child: body),
+        ),
+      ),
     );
   }
 }
@@ -246,7 +287,7 @@ class _BorderPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final rrect = RRect.fromRectAndRadius(
+    final contour = RRect.fromRectAndRadius(
       rect.deflate(0.75),
       Radius.circular(radius),
     );
@@ -254,7 +295,7 @@ class _BorderPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..shader = gradient.createShader(rect);
-    canvas.drawRRect(rrect, paint);
+    canvas.drawRRect(contour, paint);
   }
 
   @override
